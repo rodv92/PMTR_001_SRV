@@ -68,14 +68,14 @@ For instance, We could store the Moving Average over 5, 10, 20, 30, 60 seconds.
 
 The incentive behind moving average calculation is to apply low pass filtering and filter any spurious spike that would make an inappropriate relay action at the time.
 
-An 'relay action' is a set of the following parameters :
+- A 'relay action' is a set of the following parameters :
 
--An expression : using tokens representing PMTR_001_SRV parameters, and a set of inequalities and logic.
--A moving average to use for expression evaluation (except energy which is never averaged)
--A dry run, which does not perform the relay action, but does log all action behaviour
--A recovery period during which the moving average must evaluate negatively the expression before reverting relay action
-A HIGH or LOW state to command the relay on expression true. (on false evaluation the state commanded will the be opposite ) nb  : This evaluation from memory is the first action to be executed at boot up.
-A list of pins on which DIGITALWRITE Will be performed.
+- An expression : using tokens representing PMTR_001_SRV parameters, and a set of inequalities and logic.
+- A moving average to use for expression evaluation (except energy which is never averaged)
+- A dry run, which does not perform the relay action, but does log all action behaviour
+- A recovery period during which the moving average must evaluate negatively the expression before reverting relay action
+- A HIGH or LOW state to command the relay on expression true. (on false evaluation the state commanded will the be opposite ) nb  : This evaluation from memory is the first action to be executed at boot up.
+- A list of pins on which DIGITALWRITE Will be performed.
 It is recommended that each action activates a separate set of pins, otherwise the last evaluated actions will have precedence if not dryruns.
 
 There are 5 actions slots.
@@ -83,11 +83,11 @@ There are 5 actions slots.
 
 Examples of valid expressions :
 
-(L1U > 253) || (L2U > 253)) || (L3U > 253)
-LII > 16
-LIp > 1200
-L2e > 10
-(L1f < 49.1) && (L2f < 49.1) (L3f < 49.1)
+- (L1U > 253) || (L2U > 253)) || (L3U > 253)
+- LII > 16
+- LIp > 1200
+- L2e > 10
+- (L1f < 49.1) && (L2f < 49.1) (L3f < 49.1)
 
 Ex : L1U is phase to neutral L1 RMS voltage, L1I is phase to neutral RMS current, L2f is L2 frequency.
 Units use are SI, excepts for energy which is in kWh
@@ -102,9 +102,8 @@ Finally a frequency sag of 49.1 Hz over any of the phases
 
 The following protection layer has been added :
 
-- 20mm x 5mm 0.1 A ceramic fuses, fast blow 250V
-this for each phase L1 L2 L3 and neutral N
--14D481K varistors between each phase and neutral, and for protection of the PLC module.
+- 20mm x 5mm 0.1 A ceramic fuses, fast blow 250V, this for each phase L1 L2 L3 and neutral N
+- 14D481K varistors between each phase and neutral, and for protection of the PLC module.
 
 
 ----
