@@ -138,6 +138,8 @@ Modbus address encoding of the server is done throught a 8 bit DIP switch encode
 ----
 SETUP :
 
+Check the HW folder of this project for the terminal pin references.
+
 0) Disconnect power to the facility or to the VFD for safe installation of the current coils.
 
 1) Setup Modbus Address using the 8 position DIP switch to any value between 1 and 254. 0 is a broadcast address. 255 is a bridge address. Do not use these on the PMTR_001_SRV
