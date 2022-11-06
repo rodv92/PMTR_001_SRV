@@ -1,22 +1,4 @@
-/*
-  Modbus RTU Server LED
-
-  This sketch creates a Modbus RTU Server with a simulated coil.
-  The value of the simulated coil is set on the LED
-
-  Circuit:
-   - MKR board
-   - MKR 485 shield
-     - ISO GND connected to GND of the Modbus RTU server
-     - Y connected to A/Y of the Modbus RTU client
-     - Z connected to B/Z of the Modbus RTU client
-     - Jumper positions
-       - FULL set to OFF
-       - Z \/\/ Y set to OFF
-
-  created 16 July 2018
-  by Sandeep Mistry
-*/
+//CREDITS / INCLUDES
 
 #include <ArduinoRS485.h> // ArduinoModbus depends on the ArduinoRS485 library
 #include <ArduinoModbus.h>
@@ -214,17 +196,17 @@ void EvalLogicalExpression(uint8_t MAWindowSeconds, char Expression[64], double 
   for(indexptr = 0; indexptr<5; indexptr++)
   {
 
-    DebugPrint("EVAL EXPR: SEARCHING FOR EXISTING WINDOW STRUCT:",5);
+    DebugPrint(F("EVAL EXPR: SEARCHING FOR EXISTING WINDOW STRUCT:"),5);
     DebugPrint(String(indexptr),5);
-    DebugPrint("\n",5);
+    DebugPrint(F("\n"),5);
 
-    DebugPrint("STRUCT WINDOWSLENGTH:",5);
+    DebugPrint(F("STRUCT WINDOWSLENGTH:"),5);
     DebugPrint(String(MovingAveragesStructV2ptr[indexptr]->WindowLength),5);
-    DebugPrint("\n",5);
+    DebugPrint(F("\n"),5);
     
-    DebugPrint("REQUESTED WINDOW LENGTH:",5);
+    DebugPrint(F("REQUESTED WINDOW LENGTH:"),5);
     DebugPrint(String(MAWindowSeconds),5);
-    DebugPrint("\n",5);
+    DebugPrint(F("\n"),5);
     
 
     if(MovingAveragesStructV2ptr[indexptr]->WindowLength == MAWindowSeconds)
@@ -382,17 +364,17 @@ void FillAverageValuesRegisters()
 void WriteCircularBufferValues()
 {
   
-  DebugPrint("WRITE_BUFFER_START\n",6);
+  DebugPrint(F("WRITE_BUFFER_START\n"),6);
   
   for (uint8_t IndexType = 0;IndexType <15; IndexType++)
   {
-    DebugPrint("WRITE_BUFFER_FOR_INDEXTYPE:",6);
+    DebugPrint(F("WRITE_BUFFER_FOR_INDEXTYPE:"),6);
     DebugPrint(String(IndexType),6);
-    DebugPrint("\n",6);
+    DebugPrint(F("\n"),6);
 
-    DebugPrint("TO INDEX:",6);
+    DebugPrint(F("TO INDEX:"),6);
     DebugPrint(String(myCircularBufferValuesStruct.NextWriteIndex),6);
-    DebugPrint("\n",6);
+    DebugPrint(F("\n"),6);
 
   
     myCircularBufferValuesStruct.PZEMValues[myCircularBufferValuesStruct.NextWriteIndex][IndexType] = NowValues[IndexType];
@@ -411,21 +393,21 @@ void WriteCircularBufferValues()
 
 
 
-    DebugPrint("UPDATE INDEXES:",6);
-    DebugPrint("\n",6);
+    DebugPrint(F("UPDATE INDEXES"),6);
+    DebugPrint(F("\n"),6);
 
   myCircularBufferValuesStruct.NextWriteIndex++;  
   myCircularBufferValuesStruct.NextWriteIndex %= nbvalues;
   myCircularBufferValuesStruct.FillNbValues++;
   myCircularBufferValuesStruct.FillNbValues = constrain(myCircularBufferValuesStruct.FillNbValues,1,nbvalues);
 
-  DebugPrint("NEXTWRITEINDEX:",6);
+  DebugPrint(F("NEXT WRITE INDEX:"),6);
   DebugPrint(String(myCircularBufferValuesStruct.NextWriteIndex),6);
-  DebugPrint("\n",6);
+  DebugPrint(F("\n"),6);
 
-  DebugPrint("FILLNBVALUES:",6);
+  DebugPrint(F("FILLNBVALUES:"),6);
   DebugPrint(String(myCircularBufferValuesStruct.FillNbValues),6);
-  DebugPrint("\n",6);
+  DebugPrint(F("\n"),6);
 
 
 
@@ -435,9 +417,9 @@ void ComputeMovingAveragesV2Handler()
 {
 
   // update circular buffer
-  DebugPrint("WRITE_BUFFER_ENTER\n",6);
+  DebugPrint(F("WRITE_BUFFER_ENTER\n"),6);
   WriteCircularBufferValues();
-  DebugPrint("WRITE_BUFFER_EXIT\n",6);
+  DebugPrint(F("WRITE_BUFFER_EXIT\n"),6);
 
   // stop processing WindowLengths[5] at first 0 valued WindowLength requested
   uint8_t FirstZeroindexWindows = 0;
@@ -452,9 +434,9 @@ void ComputeMovingAveragesV2Handler()
 
   for(uint8_t indexptr = 0; indexptr<5; indexptr++)
   {
-    DebugPrint("FREE UNUSED STRUCT:",6);
+    DebugPrint(F("FREE UNUSED STRUCT:"),6);
     DebugPrint(String(indexptr),6);
-    DebugPrint("\n",6);
+    DebugPrint(F("\n"),6);
 
     bool match = false;
     for(uint8_t indexWindows = 0; indexWindows<FirstZeroindexWindows; indexWindows++)
@@ -469,9 +451,9 @@ void ComputeMovingAveragesV2Handler()
       {
         MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = 0.0;
       }
-      DebugPrint("FREED:",6);
+      DebugPrint(F("FREED:"),6);
       DebugPrint(String(indexptr),6);
-      DebugPrint("\n",6);
+      DebugPrint(F("\n"),6);
 
     }
   }
@@ -479,51 +461,51 @@ void ComputeMovingAveragesV2Handler()
   for (uint8_t indexWindows = 0; indexWindows < FirstZeroindexWindows; indexWindows++) 
   {
 
-    DebugPrint("COMPUTE MA FOR INDEXWINDOW:",6);
+    DebugPrint(F("COMPUTE MA FOR INDEXWINDOW:"),6);
     DebugPrint(String(indexWindows),6);
-    DebugPrint("\n",6);
+    DebugPrint(F("\n"),6);
     bool FoundStruct = false;
 
     for(uint8_t indexptr = 0; indexptr<5; indexptr++)
     {
 
-      DebugPrint("SEARCHING FOR EXISTING WINDOW STRUCT:",6);
+      DebugPrint(F("SEARCHING FOR EXISTING WINDOW STRUCT:"),6);
       DebugPrint(String(indexptr),6);
-      DebugPrint("\n",6);
+      DebugPrint(F("\n"),6);
 
-      DebugPrint("STRUCT WINDOWSLENGTH:",6);
+      DebugPrint(F("STRUCT WINDOW LENGTH:"),6);
       DebugPrint(String(MovingAveragesStructV2ptr[indexptr]->WindowLength),6);
-      DebugPrint("\n",6);
+      DebugPrint(F("\n"),6);
       
-      DebugPrint("REQUESTED WINDOW LENGTH:",6);
+      DebugPrint(F("REQUESTED WINDOW LENGTH:"),6);
       DebugPrint(String(WindowLengths[indexWindows]),6);
-      DebugPrint("\n",6);
+      DebugPrint(F("\n"),6);
       
 
       if(MovingAveragesStructV2ptr[indexptr]->WindowLength == WindowLengths[indexWindows])
       {
         // found the struct we will use
         FoundStruct = true;
-        DebugPrint("FOUND STRUCT:",6);
+        DebugPrint(F("FOUND STRUCT:"),6);
         DebugPrint(String(indexptr),6);
-        DebugPrint("\n",6);
+        DebugPrint(F("\n"),6);
 
         if (myCircularBufferValuesStruct.FillNbValues > WindowLengths[indexWindows])
         {
           //Perform MovingAverageCalculation : subtract oldest sample, add new one and divide by k;
           
-          DebugPrint("USING MA CALCULATION MODE:",6);
+          DebugPrint(F("USING MA CALCULATION MODE:"),6);
           DebugPrint(String(indexptr),6);
-          DebugPrint("\n",6);
+          DebugPrint(F("\n"),6);
 
           
           for (uint8_t indextype = 0; indextype < 15; indextype++)
           {
               // update using moving average update formula
 
-              DebugPrint("CALCULATING FOR INDEXTYPE:",6);
+              DebugPrint(F("CALCULATING FOR INDEXTYPE:"),6);
               DebugPrint(String(indextype),6);
-              DebugPrint("\n",6);
+              DebugPrint(F("\n"),6);
 
               int8_t OldestSampleToDropIndex = myCircularBufferValuesStruct.NextWriteIndex - WindowLengths[indexWindows] -1;
               int8_t SampleToAddIndex = myCircularBufferValuesStruct.NextWriteIndex - 1;
@@ -531,13 +513,13 @@ void ComputeMovingAveragesV2Handler()
               if (OldestSampleToDropIndex < 0) {OldestSampleToDropIndex += nbvalues;}
 
 
-              DebugPrint("DROPPING VALUE INDEX:",6);
+              DebugPrint(F("DROPPING VALUE INDEX:"),6);
               DebugPrint(String(OldestSampleToDropIndex),6);
-              DebugPrint("\n",6);
+              DebugPrint(F("\n"),6);
 
-              DebugPrint("ADDING VALUE INDEX:",6);
+              DebugPrint(F("ADDING VALUE INDEX:"),6);
               DebugPrint(String(SampleToAddIndex),6);
-              DebugPrint("\n",6);
+              DebugPrint(F("\n"),6);
               
 
               MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] + (myCircularBufferValuesStruct.PZEMValues[SampleToAddIndex][indextype] - myCircularBufferValuesStruct.PZEMValues[OldestSampleToDropIndex][indextype])/WindowLengths[indexWindows];
@@ -549,21 +531,21 @@ void ComputeMovingAveragesV2Handler()
         {
 
 
-          DebugPrint("USING CA CALCULATION MODE:",6);
+          DebugPrint(F("USING CA CALCULATION MODE:"),6);
           DebugPrint(String(indexptr),6);
-          DebugPrint("\n",6);
+          DebugPrint(F("\n"),6);
 
 
           for (uint8_t indextype = 0; indextype < 15; indextype++)
           {
 
-              DebugPrint("CALCULATING FOR INDEXTYPE:",6);
+              DebugPrint(F("CALCULATING FOR INDEXTYPE:"),6);
               DebugPrint(String(indextype),6);
-              DebugPrint("\n",6);
+              DebugPrint(F("\n"),6);
 
-              DebugPrint("ADDING VALUE INDEX:",6);
+              DebugPrint(F("ADDING VALUE INDEX:"),6);
               DebugPrint(String(myCircularBufferValuesStruct.FillNbValues -1),6);
-              DebugPrint("\n",6);
+              DebugPrint(F("\n"),6);
 
 
               // update using cumulative average update formula
@@ -571,13 +553,13 @@ void ComputeMovingAveragesV2Handler()
           }
         }
 
-        DebugPrint("BREAK\n",6);
+        DebugPrint(F("BREAK\n"),6);
         break;  
       }
     }
 
 
-    DebugPrint("BEFORE NOT FOUNDSTRUCT\n",6);
+    DebugPrint(F("BEFORE NOT FOUNDSTRUCT\n"),6);
       
     
     // We couldn't find an existing struct for this windowLength
@@ -587,18 +569,18 @@ void ComputeMovingAveragesV2Handler()
       for(uint8_t indexptr = 0; indexptr<5; indexptr++)
       {
 
-          DebugPrint("CHECK IF FOLLOWING INDEXPTR STRUCT IS FREE:",6);
+          DebugPrint(F("CHECK IF FOLLOWING INDEXPTR STRUCT IS FREE:"),6);
           DebugPrint(String(indexptr),6);
-          DebugPrint("\n",6);
+          DebugPrint(F("\n"),6);
 
 
 
         if(MovingAveragesStructV2ptr[indexptr]->WindowLength == 0)
         {
 
-          DebugPrint("FOUND FREE:",6);
+          DebugPrint(F("FOUND FREE:"),6);
           DebugPrint(String(indexptr),6);
-          DebugPrint("\n",6);
+          DebugPrint(F("\n"),6);
 
           // use the first free one, mark as used by writing WindowLength
           MovingAveragesStructV2ptr[indexptr]->WindowLength = WindowLengths[indexWindows];
@@ -608,9 +590,9 @@ void ComputeMovingAveragesV2Handler()
           // find the oldest sample index
 
 
-          DebugPrint("NB SAMPLES TO PROCESS:",6);
+          DebugPrint(F("NB SAMPLES TO PROCESS:"),6);
           DebugPrint(String(NbSamplesToProcess),6);
-          DebugPrint("\n",6);
+          DebugPrint(F("\n"),6);
 
 
           int8_t OldestSampleIndex = myCircularBufferValuesStruct.NextWriteIndex - NbSamplesToProcess;
@@ -618,9 +600,9 @@ void ComputeMovingAveragesV2Handler()
           if (OldestSampleIndex < 0) {OldestSampleIndex += nbvalues;}
 
 
-          DebugPrint("OLDEST SAMPLE INDEX:",6);
+          DebugPrint(F("OLDEST SAMPLE INDEX:"),6);
           DebugPrint(String(OldestSampleIndex),6);
-          DebugPrint("\n",6);
+          DebugPrint(F("\n"),6);
 
 
           // work from here upwards
@@ -629,13 +611,13 @@ void ComputeMovingAveragesV2Handler()
             for (uint8_t indextype = 0; indextype < 15; indextype++)
             {
 
-              DebugPrint("PROCESSING INDEXTYPE (ADDING):",6);
+              DebugPrint(F("PROCESSING INDEXTYPE (ADDING):"),6);
               DebugPrint(String(indextype),6);
-              DebugPrint("\n",6);
+              DebugPrint(F("\n"),6);
 
-              DebugPrint("VALUEADDRESS:",6);
+              DebugPrint(F("VALUEADDRESS:"),6);
               DebugPrint(String(indexval%nbvalues),6);
-              DebugPrint("\n",6);
+              DebugPrint(F("\n"),6);
 
 
 
@@ -653,9 +635,9 @@ void ComputeMovingAveragesV2Handler()
 
           for (uint8_t indextype = 0; indextype < 15; indextype++)
             {
-              DebugPrint("PROCESSING INDEXTYPE (DIVIDE BY NBSAMPLESTOPROCESS):",6);
+              DebugPrint(F("PROCESSING INDEXTYPE (DIVIDE BY NBSAMPLESTOPROCESS):"),6);
               DebugPrint(String(indextype),6);
-              DebugPrint("\n",6);
+              DebugPrint(F("\n"),6);
 
               MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] /= NbSamplesToProcess;
 
@@ -672,10 +654,10 @@ void ComputeMovingAveragesV2Handler()
         }
       }
     }
-      DebugPrint("EXIT INDEXWINDOWS\n",6);
+      DebugPrint(F("EXIT INDEXWINDOWS\n"),6);
   }
 
-    DebugPrint("EXIT FUNCTION\n",6);
+    DebugPrint(F("EXIT FUNCTION\n"),6);
   
 }
 /*
@@ -1090,7 +1072,7 @@ void ProcessFormulas()
     // check if formula slot is used
     DebugPrint(F("FORMULA INDEX:"),5);
     DebugPrint(indexptr,5);
-    DebugPrint("\n",5);    
+    DebugPrint(F("\n"),5);    
     
     if(TripFormulaDataStructptr[indexptr]->MAWindowSeconds != 0)
     {
@@ -1339,9 +1321,9 @@ void loop() {
   ProcessFormulas();
 
   /*
-  DebugPrint("MILLIS_BEFORE:",2);
+  DebugPrint(F("MILLIS_BEFORE:"),2);
   DebugPrint(String(millis()),2);
-  DebugPrint("\n",2);
+  DebugPrint(F("\n"),2);
   
   */
  /*
@@ -1379,9 +1361,9 @@ void loop() {
   }
 */
   /*
-  DebugPrint("MILLIS_AFTER:",2);
+  DebugPrint(F("MILLIS_AFTER:"),2);
   DebugPrint(String(millis()),2);
-  DebugPrint("\n",2);
+  DebugPrint(F("\n"),2);
   */
 
   Anyerror = false;
