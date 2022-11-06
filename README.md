@@ -30,18 +30,71 @@
 //// by zserge
 
 
+Description
+----
 
 PMTR_001_SRV is a smart 3 phase power meter with relay action for low voltage (110V 240V 400V) consumer,commercial,industrial electrical networks.
+PMTR_001_SRV functions as a Modbus server and makes the data available to Modbus Clients through a PLC module.
+For logging and display purposes, PMTR_001_SRV works with PMTR_001_CLI, a Raspberry Pi Modbus client that performs logging of the power telemetry in a relational database, provides a web interface for charts, provides the means to input relay actions formulas (more on that subject further down), and provides time synchronisation services to the server(s)
+
+For more information on the client, check https://www.github.com/rodv92/PMTR_001_CLI
+
+
+----
+INSTALLATION and SETUP :
+
 PMTR_001_SRV IS NOT INTEDED FOR DISTRIBUTION / POWER UTILITY NETWORKS !
 
+typical use case for 3 phase delta-wired measurement:
 
+![alt text](https://github.com/rodv92/PMTR_001_SRV/blob/master/hw/pmtr_001_use_case.png?raw=true)
 
-PMTR_001_SRV Should be installed on the consumer side, After the main-circuit breaker.
-PMTR_001_SRV Contains a PLC module. No Line filter should be use between the server and the client, the client would be unable to communicate with the server !
+This use case shows the installation of the PMTR_001_SRV for monitoring voltage and current drawn by a 3 phase induction motor, and all remaining power parameters.
+Note that since the motor is a 3 phase delta wired device, PMTR_001_SRV has to be setup in the following way :
+- Hardware method : By placing measurement jumpers inside the device for line voltage measurement (L1,L2),(L2,L3)(L3,L1)
+OR
+- Software method : By specifying a multiplicative correction factor : sqrt(3) for power and energy measurements inside the PMTR web interface. this factor will be uploaded to the PMTR_001_SRV device
+
+The setup contains a single digital pin operating a 5V relay (NO) that provides in turn power to a contactor (NO) that power ups (or down) the induction motor.
+
+It is then trivial to use logic to specify a relay action that evaluates and power ups or down the motor upon specific power conditions. More on relay actions below.
+
+----
+
+PMTR_001_SRV Contains a PLC modem (Power Line Communication). No Line filter should be use between the server and the client, the client would be unable to communicate with the server !
 L1, L2, L3 current coils should be placed on the current carrying wires of the metered installation, not on the wires supplying energy to the meter !!
 PMTR_001_SRV can operate over IT, TT, TN-C TN-CS earthing schemes.
 Being a non metallic chassis, PMTR_001_SRV does not require to be grounded.
 PMTR_001_SRV contains ceramic fuse protection and varistor overvoltage protection.
+
+
+Check the HW folder of this project for the terminal pin references.
+
+0) Disconnect power to the facility or to the VFD for safe installation of the current coils.
+
+1) Setup Modbus Address using the 8 position DIP switch to any value between 1 and 254. 0 is a broadcast address. 255 is a bridge address. Do not use these on the PMTR_001_SRV
+2) Set the 3 jumpers to LN metering - default - (line to neutral) or LL metering (line to line) Usually LN is preferred if the metering is on a standard european consumer network. LL metering is usually reserved for Variable Frequency Drive metering. In that case, skip step 4.
+
+2) After each phase is disconnected from the terminals, insert the current coil over the wire and reattach to the input and output terminals. repeat for each phase.
+3) Connect CT- and CT+ wires to the appropriate PMTR-001-SRV terminals. Repeat for each phase
+Then,
+4) Connect neutral wire first to the PMTR_001_SRV 
+5) You can re-establish power inside the facility now or power the VFD
+
+6) then connect L1 L2 L3. Beware, lines are powered on, use an electrician screwdriver !!!!
+When connecting L1, the unit should power up, unless on a VFD where you need at least two phases. You can test that all DC power supplies are providing backup power by connecting them individually. PMTR_001_SRV should work with either L1, L2 or L3 connected in LN metering.
+
+7) if a backup / battery supply is available you can connect it to AUX12VDC to the positive terminal and GND to the negative terminal
+
+8) Tie the SEND terminal to any L1 L2 or L3 phase, now the Rasperry Pi (PMTR_001_CLI) can be connected to the same phase and neutral as the PMTR_001_SRV and it should set the time up
+
+repeat the same actions 1 to 8 on any other PMTR_001_SRV to install on the network. use the same phase line for all the PMTR_001_SRV that you install
+
+PMTR_001_SRV can supply up to 0.8A at 12V over the 12VDC_OUT terminal, electromechanical relays can be powered by 12V IF the 5V relay action pin is recognized as HIGH by the relay.
+anyway, PMTR_001_SRV can supply up to 1.7A at 5V over the 5VDC_OUT terminal, for electromechanical relays. 
+nb: The relay action pins cannot supply more than 40mA current, use is limited only to SSR relays !!
+
+
 
 
 Modified PZEM-004t v3.0
@@ -72,11 +125,11 @@ The incentive behind moving average calculation is to apply low pass filtering a
 
 - An expression : using tokens representing PMTR_001_SRV parameters, and a set of inequalities and logic.
 - A moving average to use for expression evaluation (except energy which is never averaged)
-- A dry run, which does not perform the relay action, but does log all action behaviour
-- A recovery period during which the moving average must evaluate negatively the expression before reverting relay action
-- A HIGH or LOW state to command the relay on expression true. (on false evaluation the state commanded will the be opposite ) nb  : This evaluation from memory is the first action to be executed at boot up.
+- A dry run bit (Yes/No), which tells whether to perform or not the relay action, while still logging all action behaviour
+- A recovery period during which the expression must keep evaluating to false before reverting relay action. This hysteresis is implemented for protecting devices which should not be turned on/off too frequently.
+- A HIGH or LOW state to command the relay when expression evaluates to true. (on false evaluation the state commanded will the be opposite ) nb  : This evaluation from memory is the first action to be executed at boot up.
 - A list of pins on which DIGITALWRITE Will be performed.
-It is recommended that each action activates a separate set of pins, otherwise the last evaluated actions will have precedence if not dryruns.
+It is recommended that each action activates a separate set of pins, otherwise the last evaluated actions will have precedence and overwrite the status of pins.
 
 There are 5 actions slots.
 
@@ -87,7 +140,7 @@ Examples of valid expressions :
 - LII > 16
 - LIp > 1200
 - L2e > 10
-- (L1f < 49.1) && (L2f < 49.1) (L3f < 49.1)
+- (L1f < 49.1) && (L2f < 49.1) && (L3f < 49.1)
 
 Ex : L1U is phase to neutral L1 RMS voltage, L1I is phase to neutral RMS current, L2f is L2 frequency.
 Units use are SI, excepts for energy which is in kWh
@@ -134,34 +187,6 @@ A real time clock (RTC) 3231 mini module is used to keep track of time and the s
 
 Modbus address encoding of the server is done throught a 8 bit DIP switch encoder.
 
-----
-SETUP :
-
-Check the HW folder of this project for the terminal pin references.
-
-0) Disconnect power to the facility or to the VFD for safe installation of the current coils.
-
-1) Setup Modbus Address using the 8 position DIP switch to any value between 1 and 254. 0 is a broadcast address. 255 is a bridge address. Do not use these on the PMTR_001_SRV
-2) Set the 3 jumpers to LN metering - default - (line to neutral) or LL metering (line to line) Usually LN is preferred if the metering is on a standard european consumer network. LL metering is usually reserved for Variable Frequency Drive metering. In that case, skip step 4.
-
-2) After each phase is disconnected from the terminals, insert the current coil over the wire and reattach to the input and output terminals. repeat for each phase.
-3) Connect CT- and CT+ wires to the appropriate PMTR-001-SRV terminals. Repeat for each phase
-Then,
-4) Connect neutral wire first to the PMTR_001_SRV 
-5) You can re-establish power inside the facility now or power the VFD
-
-6) then connect L1 L2 L3. Beware, lines are powered on, use an electrician screwdriver !!!!
-When connecting L1, the unit should power up, unless on a VFD where you need at least two phases. You can test that all DC power supplies are providing backup power by connecting them individually. PMTR_001_SRV should work with either L1, L2 or L3 connected in LN metering.
-
-7) if a backup / battery supply is available you can connect it to AUX12VDC to the positive terminal and GND to the negative terminal
-
-8) Tie the SEND terminal to any L1 L2 or L3 phase, now the Rasperry Pi (PMTR_001_CLI) can be connected to the same phase and neutral as the PMTR_001_SRV and it should set the time up
-
-repeat the same actions 1 to 8 on any other PMTR_001_SRV to install on the network. use the same phase line for all the PMTR_001_SRV that you install
-
-PMTR_001_SRV can supply up to 0.8A at 12V over the 12VDC_OUT terminal, electromechanical relays can be powered by 12V IF the 5V relay action pin is recognized as HIGH by the relay.
-anyway, PMTR_001_SRV can supply up to 1.7A at 5V over the 5VDC_OUT terminal, for electromechanical relays. 
-nb: The relay action pins cannot supply more than 40mA current, use is limited only to SSR relays !!
 
 -----
 Proceed to PMTR_001_CLI Readme to finish setup.
