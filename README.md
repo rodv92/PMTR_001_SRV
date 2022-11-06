@@ -59,6 +59,8 @@ The setup contains a single digital pin operating a 5V relay (NO) that provides 
 
 It is then trivial to use logic to specify a relay action that evaluates and power ups or down the motor upon specific power conditions. More on relay actions below.
 
+Also note that the PMTR_001_SRV and PMTR_001_CLI are connected on the same line (L1) for PLC communication to occur.
+
 ----
 
 PMTR_001_SRV Contains a PLC modem (Power Line Communication). No Line filter should be use between the server and the client, the client would be unable to communicate with the server !
