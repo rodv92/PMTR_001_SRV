@@ -210,14 +210,14 @@ Software is still in POC phase. Consider the code to be in alpha stage.
 ----
 Hardware Schematics (check the /hw folder)
 
-![alt text](https://github.com/rodv92/PMTR_001_SRV/blob/master/hw/SCH_Logic Board - Low Voltage Schematic_0-Logic Board - Low Voltage Page 1_2022-11-03.pdf?raw=true)
+![alt text](https://github.com/rodv92/PMTR_001_SRV/blob/master/hw/SCH_Logic_Board.pdf?raw=true)
 
 This is the logic mezzanine board.
 
 
-![alt text](https://github.com/rodv92/SCH_Power Board - High Voltage Schematic_0-Power Board - High Voltage Page 1_2022-11-03.pdf?raw=true)
+![alt text](https://github.com/rodv92/blob/master/SCH_Power_Board.pdf?raw=true)
 
-Thi is the high voltage board.
+This is the high voltage board.
 
 # LIB INCLUDES / CREDITS / MAIN CONTRIBUTORS
 
