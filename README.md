@@ -32,16 +32,43 @@
 
 Description
 ----
+PMTR (Power Meter, Telemetry & Relay) is an open source project that allows precise monitoring of mains parameters (voltage, current, active power, energy, power factor and frequency) and allows to act on external relays based on formula triggers (ex: overcurrent or overvoltage)
+It is a client/server project with a Web interface for data display, logging and device configuration.
+It uses power line communication and the industrial proved Modbus protocol to transfer data between the client and servers; no need to have ethernet or wifi at your main power panel.
 
-PMTR_001_SRV is a smart 3 phase power meter with relay action for low voltage (110V 240V 400V) consumer,commercial,industrial electrical networks.
-PMTR_001_SRV functions as a Modbus server and makes the data available to Modbus Clients through a PLC module.
-For logging and display purposes, PMTR_001_SRV works with PMTR_001_CLI, a Raspberry Pi Modbus client that performs logging of the power telemetry in a relational database, provides a web interface for charts, provides the means to input relay actions formulas (more on that subject further down), and provides time synchronisation services to the server(s)
+It is modular and robust in approach, using off the shelf components available on Aliexpress or other vendor sites to ease replacement of parts if need arise, and thus lower TCO for many years.
+
+The server(s), (PMTR_001_SRV) is an Arduino based device that performs the power measurements and relay actions. Its configuration is pushed by a client.
+
+The client(s) (PMTR_001_CLI) is a Raspberry Pi device that grabs power telemetry and pushes configuration and time synchronisation to the server(s) device. As stated above, it does not rely on an Ethernet connection, just a Power line communication based on the ES-1642 NC module (also available on Aliexpress)
+
+Relay actions are used mainly to protect your equipment (for industrial settings) and control energy costs (ex: hotel industry, power charging for EV), It will also allow to cut/enable power at specific time of the day.
+
+This project, using the modbus protocol, will allow several servers. thus you can monitor individual circuit branchings on power subpanels.
+
+Two flavour of servers are being developped : A single phase meter, and a 3 phase meter. they are rugged using fuses and varistors for overvoltage protection.
+Metering is based on modified PZEM-004t v3.0 modules that can measure line to line voltages up to 437V AC.
 
 For more information on the client, check https://www.github.com/rodv92/PMTR_001_CLI
 
+----
+Current State of the project.
+
+A single phase proof of concept with a raspberry pi client and a single phase power meter was done and shows good results. The server code integrate formula based actions, and time synchronization. A basic web chart of power parameters and logging into a MariaDB database is part of this POC.
+
+What needs to be done in priority as of November 2022:
+
+- Finish the 3 phase prototype server, currently designed with Easy-EDA pro.
+    - Add ADG333 switching of serial line to query each PZEM-004t V3 modules.
+- Add code for DS3231 time keeping.
+- Harden and test formula actions where conflicting pins are used with different actions.
+- Make the raspberry pi (wifi, serial) configuration seamless
+- Expand the raspberry pi client to query several servers with auto-detection on the PLC bus 
+- Add a MQTT layer on the raspberry pi for upstream telemetry reporting
+- keep in touch with PeaceFair, the maker of the PZEM-004t V3.0 to make a hardened 400V module (there are still some issues regarding with high voltage tolerance)
 
 ----
-INSTALLATION and SETUP :
+projected INSTALLATION and SETUP of the 3 phase prototype :
 
 PMTR_001_SRV IS NOT INTEDED FOR DISTRIBUTION / POWER UTILITY NETWORKS !
 
@@ -63,12 +90,12 @@ Also note that the PMTR_001_SRV and PMTR_001_CLI are connected on the same line 
 
 ----
 
-PMTR_001_SRV Contains a PLC modem (Power Line Communication). No Line filter should be use between the server and the client, the client would be unable to communicate with the server !
+PMTR_001_SRV Contains a ES-1642 NC PLC modem (Power Line Communication). No Line filter should be present between the server and the client, the client would be unable to communicate with the server !
 L1, L2, L3 current coils should be placed on the current carrying wires of the metered installation, not on the wires supplying energy to the meter !!
 PMTR_001_SRV can operate over IT, TT, TN-C TN-CS earthing schemes.
 Being a non metallic chassis, PMTR_001_SRV does not require to be grounded.
 PMTR_001_SRV contains ceramic fuse protection and varistor overvoltage protection.
-
+PMTR_001_SRV will be packaged inside a standar DIN Rail plastic enclosure for ease of installation inside a power distribution main panel.
 
 Check the HW folder of this project for the terminal pin references.
 
@@ -98,10 +125,10 @@ nb: The relay action pins cannot supply more than 40mA current, use is limited o
 
 
 
+----
+Modified PZEM-004t v3.0 information
 
-Modified PZEM-004t v3.0
 The original PZEM-004t v3.0 can measure up to 267V RMS.
-
 
 Here, The metering is done through a modified PZEM-004t v3 for up to European phase to phase voltage tolerance :
 up to 427V RMS with 0.2V resolution. Compared to the non-modified version, This ALSO allows phase to phase metering, and phase to neutral in case of neutral fault.
@@ -181,6 +208,13 @@ The main controller is an Arduino mega 2560 it is on a separate mezzanine board 
 
 The following IC : ADG333 allows routing a single hardware serial port to the three PZEM modules. Querying is continuous and sequential (all parameters of module 1,2,3,1,2...)
 
+It could be technically feasible to have all PZEM modules on the same RX/TX serial TTL pair, but that would need to ensure that the optocouplers do not overload the RX/TX current sourcing capabilities, and also would need a factory preset of the PZEM-004t V3.0 addresses. Note that PZEM-004t V3.0 itself is a modbus device.
+
+The server itself encapsulate telemetry queries and present the 3 PZEM-004t V3.0 as a single modbus server 
+device to the Raspberry Pi client.
+
+Thus, it seems more adequate to use the same Modbus address on each module, and switch them using an IC switch like the ADG333.
+
 ES-1642NC uses a separate hardware serial port for modbus communication over one phase.
 the serial line speed is 9600 bps. the PLC speed is between 2.5 to 4.5 kbps.
 
@@ -195,6 +229,6 @@ Proceed to PMTR_001_CLI Readme to finish setup.
 
 
 
-Most of the single phase functionality is POC- tested.
+Most of the single phase functionality is POC tested.
 three phase hardware testing and harderning is still in progress.
 Software is still in POC phase. Consider the code to be in alpha stage.
