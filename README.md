@@ -1,33 +1,6 @@
 # PMTR_001_SRV_001 V0.22
 
 
-# LIB INCLUDES / CREDITS / MAIN CONTRIBUTORS
-
-#include <ArduinoRS485.h>
-#include <ArduinoModbus.h>
-#include <ModbusRTUServer.h>
-#include <ModbusServer.h>
-
-// Modbus library used for PLC client/servers communication 
-// ArduinoModbus depends on the ArduinoRS485 library https://github.com/arduino-libraries/ArduinoRS485
-//https://github.com/arduino-libraries/ArduinoModbus
-//// by sandeepmistry
-
-
-#include <PZEM004Tv30.h>
-// specific modbus conditioning and parsing library for the power monitoring modules
-//https://github.com/mandulaj/PZEM-004T-v30
-//// by mandulaj
-
-#include <TimeLib.h>
-/// library for scheduling recurrent tasks 
-//https://github.com/PaulStoffregen/Time/blob/master/TimeLib.h
-//// by PaulStroffregen
-
-#include <expr.h>
-//// library for parsing math and logical expressions (for relay logic)
-//https://github.com/zserge/expr/blob/master/expr.h
-//// by zserge
 
 
 Description
@@ -232,3 +205,42 @@ Proceed to PMTR_001_CLI Readme to finish setup.
 Most of the single phase functionality is POC tested.
 three phase hardware testing and harderning is still in progress.
 Software is still in POC phase. Consider the code to be in alpha stage.
+
+
+----
+Hardware Schematics (check the /hw folder)
+
+![alt text](https://github.com/rodv92/PMTR_001_SRV/blob/master/hw/SCH_Logic Board - Low Voltage Schematic_0-Logic Board - Low Voltage Page 1_2022-11-03.pdf?raw=true)
+
+This is the logic mezzanine board.
+
+
+![alt text](https://github.com/rodv92/SCH_Power Board - High Voltage Schematic_0-Power Board - High Voltage Page 1_2022-11-03.pdf?raw=true)
+
+Thi is the high voltage board.
+
+# LIB INCLUDES / CREDITS / MAIN CONTRIBUTORS
+
+
+Modbus library used for PLC client/servers communication 
+ArduinoModbus depends on the ArduinoRS485 library https://github.com/arduino-libraries/ArduinoRS485
+https://github.com/arduino-libraries/ArduinoModbus
+by sandeepmistry
+
+
+specific modbus conditioning and parsing library for the power monitoring modules
+https://github.com/mandulaj/PZEM-004T-v30
+by mandulaj
+
+library for timekeeping 
+https://github.com/PaulStoffregen/Time/blob/master/TimeLib.h
+by PaulStroffregen
+
+
+library for scheduling task by timer ISRs
+https://github.com/khoih-prog/TimerInterrupt
+by khoih-prog
+
+library for parsing math and logical expressions (for relay logic)
+https://github.com/zserge/expr/blob/master/expr.h
+by zserge
