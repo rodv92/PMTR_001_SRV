@@ -215,7 +215,7 @@ Hardware Schematics (check the /hw folder)
 This is the logic mezzanine board.
 
 
-![alt text](https://github.com/rodv92/blob/master/SCH_Power_Board.png?raw=true)
+![alt text](https://github.com/rodv92/PMTR_001_SRV/blob/master/hw/SCH_Power_Board.png?raw=true)
 
 This is the high voltage board.
 
