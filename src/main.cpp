@@ -19,6 +19,14 @@
 #include <SimpleTimer.h>              // https://github.com/schinken/SimpleTimer
 
 ISR_Timer ISR_timer;
+
+// The following Arduino pins are ued to switch serial2 signals to each of the 3 PZEMs using the ADG333A
+// Quad SPDT Switch
+#define ADG333A_IN1_PIN 2
+#define ADG333A_IN2_PIN 4
+#define ADG333A_IN3_PIN 5
+#define ADG333A_IN4_PIN 3
+
 PZEM004Tv30 pzem(&Serial2);
 time_t time;
 
@@ -765,102 +773,175 @@ void ComputeMovingAveragesHandler()
 }
 */
 
+void SelectPZEM(uint8_t PZEMID)
+
+{
+  switch PZEMID
+  {
+    case 1:
+
+// switching TX line
+    DigitalWrite(ADG333A_IN1_PIN,HIGH);
+// switching RX line
+    DigitalWrite(ADG333A_IN4_PIN,HIGH);
+
+    case 2:
+
+// switching TX line
+    DigitalWrite(ADG333A_IN1_PIN,LOW);
+// switching RX line
+    DigitalWrite(ADG333A_IN4_PIN,LOW);
+
+    
+  }
+
+
+
+}
+// final code for 3 units (for now we are testing two pzems only)
+void SelectPZEM_v2(uint8_t PZEMID)
+
+{
+  switch PZEMID
+  {
+    case 1:
+
+// switching TX line
+    DigitalWrite(ADG333A_IN1_PIN,HIGH);
+// switching RX line
+    DigitalWrite(ADG333A_IN3_PIN,HIGH);
+    
+    case 2:
+
+// switching TX line
+    DigitalWrite(ADG333A_IN1_PIN,LOW);
+    DigitalWrite(ADG333A_IN2_PIN,HIGH);
+// switching RX line
+    DigitalWrite(ADG333A_IN3_PIN,LOW);
+    DigitalWrite(ADG333A_IN4_PIN,HIGH);
+
+    case 3:
+
+// switching TX line
+    DigitalWrite(ADG333A_IN1_PIN,LOW);
+    DigitalWrite(ADG333A_IN2_PIN,LOW);
+// switching RX line
+    DigitalWrite(ADG333A_IN3_PIN,LOW);
+    DigitalWrite(ADG333A_IN4_PIN,LOW);
+
+  }
+}
+
 void FillNowValuesAndRegisters()
 {
 
-  float voltage = pzem.voltage(); 
-  float current = pzem.current();
-  float power = pzem.power();
-  float frequency = pzem.frequency();
-  float pf = pzem.pf();
-  float energy = pzem.energy();
-  long ret = 0;
+  for (uint8_t i = 0; i < 2; i++)
+  {
+    SelectPZEM(i)
+    float voltage = pzem.voltage(); 
+    float current = pzem.current();
+    float power = pzem.power();
+    float frequency = pzem.frequency();
+    float pf = pzem.pf();
+    float energy = pzem.energy();
+    long ret = 0;
 
-  if(!isnan(voltage)){
-      //Serial.print("Voltage: "); Serial.print(voltage); Serial.println("V");
-       NowValues[0] = voltage;
-  } else {
-      //Serial.println("Error reading voltage");
-      NowValues[0] = 0.0;
+    if(!isnan(voltage)){
+        //Serial.print("Voltage: "); Serial.print(voltage); Serial.println("V");
+        NowValues[0 + i] = voltage;
+    } else {
+        //Serial.println("Error reading voltage");
+        NowValues[0 + i] = 0.0;
 
-      Anyerror = true;
-  }
-  memcpy(VoltageModbusRegister, &(NowValues[0]), sizeof(VoltageModbusRegister));
-    
-  //NowValues[3] = pzem.current();
-  if(!isnan(current)){
-      //Serial.print("Current: "); Serial.print(current); Serial.println("A");
-      NowValues[3] = current;
+        Anyerror = true;
+    }
+    memcpy(VoltageModbusRegister, &(NowValues[0 + i]), sizeof(VoltageModbusRegister));
+
+    ret = ModbusRTUServer.holdingRegisterWrite(80 + 2*i,VoltageModbusRegister[0]);
+    ret = ModbusRTUServer.holdingRegisterWrite(81 + 2*i,VoltageModbusRegister[1]);
+
       
-  } else {
-      //Serial.println("Error reading current");
-      NowValues[3] = 0.0;
-      Anyerror = true;
-  }
-  memcpy(CurrentModbusRegister, &(NowValues[3]), sizeof(CurrentModbusRegister));
+    //NowValues[3] = pzem.current();
+    if(!isnan(current)){
+        //Serial.print("Current: "); Serial.print(current); Serial.println("A");
+        NowValues[3 + i] = current;
+        
+    } else {
+        //Serial.println("Error reading current");
+        NowValues[3 + i] = 0.0;
+        Anyerror = true;
+    }
+    memcpy(CurrentModbusRegister, &(NowValues[3 + i]), sizeof(CurrentModbusRegister));
+
+    ret = ModbusRTUServer.holdingRegisterWrite(86 + 2*i,CurrentModbusRegister[0]);
+    ret = ModbusRTUServer.holdingRegisterWrite(87 + 2*i,CurrentModbusRegister[1]);
 
 
-  //NowValues[6] = pzem.power();
-  if(!isnan(power)){
-      //Serial.print("Power: "); Serial.print(power); Serial.println("W");
-      NowValues[6] = power;
-  
-  } else {
-      //Serial.println("Error reading power");
-      NowValues[6] = 0.0;
-      Anyerror = true;
-  }
-  memcpy(PowerModbusRegister, &(NowValues[6]), sizeof(PowerModbusRegister));
 
-  //NowValues[9] = pzem.frequency();
-  if(!isnan(frequency)){
-      //Serial.print("Frequency: "); Serial.print(frequency, 1); Serial.println("Hz");
-      NowValues[9] = frequency;
-  
-  } else {
-      //Serial.println("Error reading frequency");
-      NowValues[9] = 0.0;
-      Anyerror = true;
-  }
-  memcpy(FrequencyModbusRegister, &(NowValues[9]), sizeof(FrequencyModbusRegister));
-
-
-  //NowValues[12] = pzem.pf();
-  if(!isnan(pf)){
-      //Serial.print("PF: "); Serial.println(pf);
-      NowValues[12] = pf;
-  } else {
-      //Serial.println("Error reading power factor");
-      NowValues[12] = 0.0;
-      Anyerror = true;
-  }
-  memcpy(PowerFactorModbusRegister, &(NowValues[12]), sizeof(PowerFactorModbusRegister));
-
-  //NowValues[15] = pzem.energy();
-  if(!isnan(energy)){
-      //Serial.print("Energy: "); Serial.print(energy,3); Serial.println("kWh");
-       NowValues[15] = energy;  
-  } else {
-      //Serial.println("Error reading energy");
-      NowValues[15] = 0.0;
-      Anyerror = true;
-  }
-  memcpy(EnergyModbusRegister, &(NowValues[15]), sizeof(EnergyModbusRegister));
-
-
-    // L1U
-    ret = ModbusRTUServer.holdingRegisterWrite(80,VoltageModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(81,VoltageModbusRegister[1]);
-    // L2U
-    ret = ModbusRTUServer.holdingRegisterWrite(82,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(83,0);
-    // L3U
-    ret = ModbusRTUServer.holdingRegisterWrite(84,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(85,0);
+    //NowValues[6] = pzem.power();
+    if(!isnan(power)){
+        //Serial.print("Power: "); Serial.print(power); Serial.println("W");
+        NowValues[6 + i] = power;
     
-    // L1I
-    ret = ModbusRTUServer.holdingRegisterWrite(86,CurrentModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(87,CurrentModbusRegister[1]);
+    } else {
+        //Serial.println("Error reading power");
+        NowValues[6 + i] = 0.0;
+        Anyerror = true;
+    }
+    memcpy(PowerModbusRegister, &(NowValues[6 + i]), sizeof(PowerModbusRegister));
+
+    ret = ModbusRTUServer.holdingRegisterWrite(92 + 2*i,PowerModbusRegister[0]);
+    ret = ModbusRTUServer.holdingRegisterWrite(93 + 2*i,PowerModbusRegister[1]);  
+  
+
+    //NowValues[9] = pzem.frequency();
+    if(!isnan(frequency)){
+        //Serial.print("Frequency: "); Serial.print(frequency, 1); Serial.println("Hz");
+        NowValues[9 + i] = frequency;
+    
+    } else {
+        //Serial.println("Error reading frequency");
+        NowValues[9 + i] = 0.0;
+        Anyerror = true;
+    }
+    memcpy(FrequencyModbusRegister, &(NowValues[9 + i]), sizeof(FrequencyModbusRegister));
+
+    ret = ModbusRTUServer.holdingRegisterWrite(104 + 2*i,FrequencyModbusRegister[0]);
+    ret = ModbusRTUServer.holdingRegisterWrite(105 + 2*i,FrequencyModbusRegister[1]);
+   
+
+    //NowValues[12] = pzem.pf();
+    if(!isnan(pf)){
+        //Serial.print("PF: "); Serial.println(pf);
+        NowValues[12 + i] = pf;
+    } else {
+        //Serial.println("Error reading power factor");
+        NowValues[12 + i] = 0.0;
+        Anyerror = true;
+    }
+    memcpy(PowerFactorModbusRegister, &(NowValues[12 + i]), sizeof(PowerFactorModbusRegister));
+
+    ret = ModbusRTUServer.holdingRegisterWrite(110 + 2*i,PowerFactorModbusRegister[0]);
+    ret = ModbusRTUServer.holdingRegisterWrite(111 + 2*i,PowerFactorModbusRegister[1]);
+
+
+    //NowValues[15] = pzem.energy();
+    if(!isnan(energy)){
+        //Serial.print("Energy: "); Serial.print(energy,3); Serial.println("kWh");
+        NowValues[15 + i] = energy;  
+    } else {
+        //Serial.println("Error reading energy");
+        NowValues[15 + i] = 0.0;
+        Anyerror = true;
+    }
+    memcpy(EnergyModbusRegister, &(NowValues[15 + i]), sizeof(EnergyModbusRegister));
+
+    ret = ModbusRTUServer.holdingRegisterWrite(98 +2*i,EnergyModbusRegister[0]);
+    ret = ModbusRTUServer.holdingRegisterWrite(99 +2*i,EnergyModbusRegister[1]);
+    
+
+  }
+    
     // L2I
     ret = ModbusRTUServer.holdingRegisterWrite(88,0);
     ret = ModbusRTUServer.holdingRegisterWrite(89,0);
@@ -868,9 +949,6 @@ void FillNowValuesAndRegisters()
     ret = ModbusRTUServer.holdingRegisterWrite(90,0);
     ret = ModbusRTUServer.holdingRegisterWrite(91,0);
     
-    // L1P
-    ret = ModbusRTUServer.holdingRegisterWrite(92,PowerModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(93,PowerModbusRegister[1]);  
     // L2P
     ret = ModbusRTUServer.holdingRegisterWrite(94,0);
     ret = ModbusRTUServer.holdingRegisterWrite(95,0);  
@@ -878,9 +956,6 @@ void FillNowValuesAndRegisters()
     ret = ModbusRTUServer.holdingRegisterWrite(96,0);
     ret = ModbusRTUServer.holdingRegisterWrite(97,0);  
    
-    // L1E
-    ret = ModbusRTUServer.holdingRegisterWrite(98,EnergyModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(99,EnergyModbusRegister[1]);
     // L2E
     ret = ModbusRTUServer.holdingRegisterWrite(100,0);
     ret = ModbusRTUServer.holdingRegisterWrite(101,0);
@@ -889,8 +964,6 @@ void FillNowValuesAndRegisters()
     ret = ModbusRTUServer.holdingRegisterWrite(103,0);
     
     // L1f
-    ret = ModbusRTUServer.holdingRegisterWrite(104,FrequencyModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(105,FrequencyModbusRegister[1]);
     // L2f
     ret = ModbusRTUServer.holdingRegisterWrite(106,0);
     ret = ModbusRTUServer.holdingRegisterWrite(107,0);
@@ -898,9 +971,6 @@ void FillNowValuesAndRegisters()
     ret = ModbusRTUServer.holdingRegisterWrite(108,0);
     ret = ModbusRTUServer.holdingRegisterWrite(109,0);
     
-    // L1pf
-    ret = ModbusRTUServer.holdingRegisterWrite(110,PowerFactorModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(111,PowerFactorModbusRegister[1]);
     // L2pf
     ret = ModbusRTUServer.holdingRegisterWrite(112,0);
     ret = ModbusRTUServer.holdingRegisterWrite(113,0);
