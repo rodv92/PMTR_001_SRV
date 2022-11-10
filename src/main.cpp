@@ -22,10 +22,10 @@ ISR_Timer ISR_timer;
 
 // The following Arduino pins are ued to switch serial2 signals to each of the 3 PZEMs using the ADG333A
 // Quad SPDT Switch
-#define ADG333A_IN1_PIN 2
+#define ADG333A_IN1_PIN 7
 #define ADG333A_IN2_PIN 4
 #define ADG333A_IN3_PIN 5
-#define ADG333A_IN4_PIN 3
+#define ADG333A_IN4_PIN 8
 
 PZEM004Tv30 pzem(&Serial2);
 time_t time;
@@ -774,24 +774,29 @@ void ComputeMovingAveragesHandler()
 */
 
 void SelectPZEM(uint8_t PZEMID)
-
 {
-  switch PZEMID
+
+  pinMode(ADG333A_IN1_PIN,OUTPUT);
+  pinMode(ADG333A_IN4_PIN,OUTPUT);
+
+  switch (PZEMID)
   {
+    case 0:
+
+// switching TX line
+    digitalWrite(ADG333A_IN1_PIN,HIGH);
+// switching RX line
+    digitalWrite(ADG333A_IN4_PIN,HIGH);
+
+    break;
+
     case 1:
 
 // switching TX line
-    DigitalWrite(ADG333A_IN1_PIN,HIGH);
+    digitalWrite(ADG333A_IN1_PIN,LOW);
 // switching RX line
-    DigitalWrite(ADG333A_IN4_PIN,HIGH);
-
-    case 2:
-
-// switching TX line
-    DigitalWrite(ADG333A_IN1_PIN,LOW);
-// switching RX line
-    DigitalWrite(ADG333A_IN4_PIN,LOW);
-
+    digitalWrite(ADG333A_IN4_PIN,LOW);
+    break;
     
   }
 
@@ -800,34 +805,39 @@ void SelectPZEM(uint8_t PZEMID)
 }
 // final code for 3 units (for now we are testing two pzems only)
 void SelectPZEM_v2(uint8_t PZEMID)
-
 {
-  switch PZEMID
+
+  pinMode(ADG333A_IN1_PIN,OUTPUT);
+  pinMode(ADG333A_IN4_PIN,OUTPUT);
+
+  switch (PZEMID)
   {
+    case 0:
+
+// switching TX line
+    digitalWrite(ADG333A_IN1_PIN,HIGH);
+// switching RX line
+    digitalWrite(ADG333A_IN3_PIN,HIGH);
+
+    break;
+    
     case 1:
 
 // switching TX line
-    DigitalWrite(ADG333A_IN1_PIN,HIGH);
+    digitalWrite(ADG333A_IN1_PIN,LOW);
+    digitalWrite(ADG333A_IN2_PIN,HIGH);
 // switching RX line
-    DigitalWrite(ADG333A_IN3_PIN,HIGH);
-    
+    digitalWrite(ADG333A_IN3_PIN,LOW);
+    digitalWrite(ADG333A_IN4_PIN,HIGH);
+
     case 2:
 
 // switching TX line
-    DigitalWrite(ADG333A_IN1_PIN,LOW);
-    DigitalWrite(ADG333A_IN2_PIN,HIGH);
+    digitalWrite(ADG333A_IN1_PIN,LOW);
+    digitalWrite(ADG333A_IN2_PIN,LOW);
 // switching RX line
-    DigitalWrite(ADG333A_IN3_PIN,LOW);
-    DigitalWrite(ADG333A_IN4_PIN,HIGH);
-
-    case 3:
-
-// switching TX line
-    DigitalWrite(ADG333A_IN1_PIN,LOW);
-    DigitalWrite(ADG333A_IN2_PIN,LOW);
-// switching RX line
-    DigitalWrite(ADG333A_IN3_PIN,LOW);
-    DigitalWrite(ADG333A_IN4_PIN,LOW);
+    digitalWrite(ADG333A_IN3_PIN,LOW);
+    digitalWrite(ADG333A_IN4_PIN,LOW);
 
   }
 }
@@ -835,16 +845,18 @@ void SelectPZEM_v2(uint8_t PZEMID)
 void FillNowValuesAndRegisters()
 {
 
+  long ret = 0;
   for (uint8_t i = 0; i < 2; i++)
   {
-    SelectPZEM(i)
+    SelectPZEM(i);
+    delay(1000);
     float voltage = pzem.voltage(); 
     float current = pzem.current();
     float power = pzem.power();
     float frequency = pzem.frequency();
     float pf = pzem.pf();
     float energy = pzem.energy();
-    long ret = 0;
+    
 
     if(!isnan(voltage)){
         //Serial.print("Voltage: "); Serial.print(voltage); Serial.println("V");
@@ -942,43 +954,26 @@ void FillNowValuesAndRegisters()
 
   }
     
-    // L2I
-    ret = ModbusRTUServer.holdingRegisterWrite(88,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(89,0);
     // L3I
     ret = ModbusRTUServer.holdingRegisterWrite(90,0);
     ret = ModbusRTUServer.holdingRegisterWrite(91,0);
     
-    // L2P
-    ret = ModbusRTUServer.holdingRegisterWrite(94,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(95,0);  
     // L3P
     ret = ModbusRTUServer.holdingRegisterWrite(96,0);
     ret = ModbusRTUServer.holdingRegisterWrite(97,0);  
    
-    // L2E
-    ret = ModbusRTUServer.holdingRegisterWrite(100,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(101,0);
     // L3E
     ret = ModbusRTUServer.holdingRegisterWrite(102,0);
     ret = ModbusRTUServer.holdingRegisterWrite(103,0);
     
-    // L1f
-    // L2f
-    ret = ModbusRTUServer.holdingRegisterWrite(106,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(107,0);
     // L3f
     ret = ModbusRTUServer.holdingRegisterWrite(108,0);
     ret = ModbusRTUServer.holdingRegisterWrite(109,0);
     
-    // L2pf
-    ret = ModbusRTUServer.holdingRegisterWrite(112,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(113,0);
     // L3pf
     ret = ModbusRTUServer.holdingRegisterWrite(114,0);
     ret = ModbusRTUServer.holdingRegisterWrite(115,0);
     
-
 }
 
 void ProcessFormulas()
