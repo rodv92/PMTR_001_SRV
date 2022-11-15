@@ -1,17 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset
-      xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-      xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
-            http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
-
-<url>
-  <loc>https://rodv92.github.io/PMTR_001_SRV</loc>
-  <priority>1.00</priority>
-</url>
-<url>
-  <loc>https://rodv92.github.io/PMTR_001_SRV/index.html</loc>
-  <priority>1.00</priority>
-</url>
-
-</urlset>
+<!-- sitemap-generator-url="http://www.arnebrachhold.de" sitemap-generator-version="4.1.0" -->
+<!-- generated-on="November 15, 2022 13:42" -->
+<sitemapindex xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/siteindex.xsd" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">	<sitemap>
+		<loc>https://rodv92.github.io/PMTR_001_SRV</loc>
+		<lastmod>2022-03-11T14:24:41+00:00</lastmod>
+	</sitemap>
+	<sitemap>
+		<loc>https://rodv92.github.io/PMTR_001_SRV/index.html</loc>
+		<lastmod>2019-06-22T09:52:50+00:00</lastmod>
+	</sitemap>
+</sitemapindex>
