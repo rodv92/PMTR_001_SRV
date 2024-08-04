@@ -22,10 +22,10 @@ ISR_Timer ISR_timer;
 
 // The following Arduino pins are ued to switch serial2 signals to each of the 3 PZEMs using the ADG333A
 // Quad SPDT Switch
-#define ADG333A_IN1_PIN 7
-#define ADG333A_IN2_PIN 4
-#define ADG333A_IN3_PIN 5
-#define ADG333A_IN4_PIN 8
+#define ADG333A_IN1_PIN 32
+#define ADG333A_IN2_PIN 33
+#define ADG333A_IN3_PIN 34
+#define ADG333A_IN4_PIN 35
 
 PZEM004Tv30 pzem(&Serial2);
 time_t time;
@@ -159,12 +159,19 @@ const int numInputRegisters = 2;
 bool Anyerror = false;
 uint8_t DeviceAddress;
 
-uint8_t DebugLevel = 5;
+uint8_t DebugLevel = 2;
 
 void DebugPrint(String DebugStr, uint8_t myDebugLevel)
 {
   if (myDebugLevel <= DebugLevel)
   {Serial.print(DebugStr);
+  Serial.flush();}
+}
+
+void DebugPrint(uint8_t DebugNum, uint8_t myDebugLevel)
+{
+  if (myDebugLevel <= DebugLevel)
+  {Serial.print(DebugNum);
   Serial.flush();}
 }
 
@@ -174,8 +181,13 @@ uint8_t myPowofTwo (uint8_t p) {
   return i;
 }
 
-uint8_t GetDeviceAddress(uint8_t *pins)  // get device adress by reading voltage on 8 pins, array from LSB to MSB.
+uint8_t GetDeviceAddress(uint8_t *pins, uint8_t supplypin)  // get device adress by reading voltage on 8 pins, array from LSB to MSB.
 {
+
+  // supplying 5V to address bus
+  pinMode(supplypin,OUTPUT);
+  digitalWrite(supplypin,HIGH);
+
   uint8_t k;
   bool digital_val;
   uint8_t devaddr = 0;
@@ -185,6 +197,12 @@ uint8_t GetDeviceAddress(uint8_t *pins)  // get device adress by reading voltage
     digital_val = digitalRead(pins[k]);
     devaddr += digital_val << k;
   } 
+
+
+  // stop supplying 5V to address bus
+  digitalWrite(supplypin,LOW);
+  pinMode(supplypin,INPUT);
+  
 
   return devaddr;
 }
@@ -204,15 +222,13 @@ void EvalLogicalExpression(uint8_t MAWindowSeconds, char Expression[64], double 
   for(indexptr = 0; indexptr<5; indexptr++)
   {
 
-    DebugPrint(F("EVAL EXPR: SEARCHING FOR EXISTING WINDOW STRUCT:"),5);
+    DebugPrint(F("EvalLogicalExpression: SEARCHING FOR EXISTING WINDOW STRUCT: indexptr windowslength requestedwindowslength\t"),5);
     DebugPrint(String(indexptr),5);
-    DebugPrint(F("\n"),5);
+    DebugPrint(F("\t"),5);
 
-    DebugPrint(F("STRUCT WINDOWSLENGTH:"),5);
     DebugPrint(String(MovingAveragesStructV2ptr[indexptr]->WindowLength),5);
-    DebugPrint(F("\n"),5);
+    DebugPrint(F("\t"),5);
     
-    DebugPrint(F("REQUESTED WINDOW LENGTH:"),5);
     DebugPrint(String(MAWindowSeconds),5);
     DebugPrint(F("\n"),5);
     
@@ -220,6 +236,9 @@ void EvalLogicalExpression(uint8_t MAWindowSeconds, char Expression[64], double 
     if(MovingAveragesStructV2ptr[indexptr]->WindowLength == MAWindowSeconds)
     {
       // found the struct we will use
+      DebugPrint(F("EvalLogicalExpression: STRUCT MATCH!: indexptr\t"),5);
+      DebugPrint(String(indexptr),5);
+      DebugPrint(F("\n"),5);
       break;
     }
 
@@ -285,16 +304,19 @@ void EvalLogicalExpression(uint8_t MAWindowSeconds, char Expression[64], double 
 };
 
   const char *s = Expression;
+
+  DebugPrint(F("EvalLogicalExpression: Expression\t"),5);
   DebugPrint(String(s),5);
+  DebugPrint(F("\n"),5);
     
   struct expr *e = expr_create(s, strlen(s), &vars, NULL);
     if (e == NULL) {
-    DebugPrint(F("EXPRESSION SYNTAX ERROR\n"),5);
+    DebugPrint(F("EvalLogicalExpression: EXPRESSION SYNTAX ERROR\n"),5);
     return 1;
   }
 
   result = expr_eval(e);
-  DebugPrint(F("EXPRESSION RESULT:"),5);
+  DebugPrint(F("EvalLogicalExpression: EXPRESSION RESULT: result\t"),5);
   DebugPrint(String(result),5);
   DebugPrint(F("\n"),5);
 
@@ -372,48 +394,35 @@ void FillAverageValuesRegisters()
 void WriteCircularBufferValues()
 {
   
-  DebugPrint(F("WRITE_BUFFER_START\n"),6);
+  DebugPrint(F("WriteCircularBufferValues: START\n\n"),6);
   
   for (uint8_t IndexType = 0;IndexType <15; IndexType++)
   {
-    DebugPrint(F("WRITE_BUFFER_FOR_INDEXTYPE:"),6);
+    DebugPrint(F("WriteCircularBufferValues: IndexType NextWriteIndex\t"),6);
     DebugPrint(String(IndexType),6);
-    DebugPrint(F("\n"),6);
-
-    DebugPrint(F("TO INDEX:"),6);
+    DebugPrint(F("\t"),6);
     DebugPrint(String(myCircularBufferValuesStruct.NextWriteIndex),6);
     DebugPrint(F("\n"),6);
 
   
     myCircularBufferValuesStruct.PZEMValues[myCircularBufferValuesStruct.NextWriteIndex][IndexType] = NowValues[IndexType];
 
-
-    //Serial.println("CIRC:");
-    //Serial.flush();
-    
-    //Serial.println(myCircularBufferValuesStruct.PZEMValues[myCircularBufferValuesStruct.NextWriteIndex][IndexType]);
-  
-    //Serial.println("INTO BUFFER ADDRESS:");
-    //Serial.println(myCircularBufferValuesStruct.NextWriteIndex);
-    //Serial.flush();
-    
   }
 
 
+  DebugPrint(F("WriteCircularBufferValues: END\n\n"),6);
+  
 
-    DebugPrint(F("UPDATE INDEXES"),6);
-    DebugPrint(F("\n"),6);
-
+  DebugPrint(F("WriteCircularBufferValues: UPDATE INDEXES\n"),6);
+  
   myCircularBufferValuesStruct.NextWriteIndex++;  
   myCircularBufferValuesStruct.NextWriteIndex %= nbvalues;
   myCircularBufferValuesStruct.FillNbValues++;
   myCircularBufferValuesStruct.FillNbValues = constrain(myCircularBufferValuesStruct.FillNbValues,1,nbvalues);
 
-  DebugPrint(F("NEXT WRITE INDEX:"),6);
+  DebugPrint(F("WriteCircularBufferValues: NextWriteIndex FillNbValues\t"),6);
   DebugPrint(String(myCircularBufferValuesStruct.NextWriteIndex),6);
-  DebugPrint(F("\n"),6);
-
-  DebugPrint(F("FILLNBVALUES:"),6);
+  DebugPrint(F("\t"),6);
   DebugPrint(String(myCircularBufferValuesStruct.FillNbValues),6);
   DebugPrint(F("\n"),6);
 
@@ -425,10 +434,10 @@ void ComputeMovingAveragesV2Handler()
 {
 
   // update circular buffer
-  DebugPrint(F("WRITE_BUFFER_ENTER\n"),6);
+  DebugPrint(F("ComputeMovingAveragesV2Handler: Call WriteCircularBufferValues() \n\n"),6);
   WriteCircularBufferValues();
-  DebugPrint(F("WRITE_BUFFER_EXIT\n"),6);
-
+  DebugPrint(F("ComputeMovingAveragesV2Handler: End Call WriteCircularBufferValues() \n\n"),6);
+  
   // stop processing WindowLengths[5] at first 0 valued WindowLength requested
   uint8_t FirstZeroindexWindows = 0;
 
@@ -440,9 +449,11 @@ void ComputeMovingAveragesV2Handler()
     }
   // next, find if there are any unused moving averages structs and free them.
 
+  DebugPrint(F("ComputeMovingAveragesV2Handler: FREEING UNUSED STRUCTS\n\n"),6);
+    
   for(uint8_t indexptr = 0; indexptr<5; indexptr++)
   {
-    DebugPrint(F("FREE UNUSED STRUCT:"),6);
+    DebugPrint(F("ComputeMovingAveragesV2Handler: FREE UNUSED STRUCT?: indexptr\t"),6);
     DebugPrint(String(indexptr),6);
     DebugPrint(F("\n"),6);
 
@@ -453,39 +464,40 @@ void ComputeMovingAveragesV2Handler()
     }
     if (!match)
     {
-      // this moving average struct is no more needed, free it by setting WindowLength to 0 and clear moving average values
+      // this moving average struct is not needed anymore, free it by setting WindowLength to 0 and clear moving average values
       MovingAveragesStructV2ptr[indexptr]->WindowLength = 0;
       for (uint8_t indextype = 0; indextype < 15; indextype++)
       {
         MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = 0.0;
       }
-      DebugPrint(F("FREED:"),6);
+      DebugPrint(F("ComputeMovingAveragesV2Handler: FREED!: indexptr\t"),6);
       DebugPrint(String(indexptr),6);
       DebugPrint(F("\n"),6);
 
     }
   }
 
+  DebugPrint(F("ComputeMovingAveragesV2Handler: COMPUTING MOVING AVERAGES\n\n"),6);
+    
   for (uint8_t indexWindows = 0; indexWindows < FirstZeroindexWindows; indexWindows++) 
   {
 
-    DebugPrint(F("COMPUTE MA FOR INDEXWINDOW:"),6);
+    DebugPrint(F("ComputeMovingAveragesV2Handler: COMPUTE MA FOR indexWindows:\t"),6);
     DebugPrint(String(indexWindows),6);
-    DebugPrint(F("\n"),6);
+    DebugPrint(F("\n\n"),6);
     bool FoundStruct = false;
 
     for(uint8_t indexptr = 0; indexptr<5; indexptr++)
     {
 
-      DebugPrint(F("SEARCHING FOR EXISTING WINDOW STRUCT:"),6);
+      DebugPrint(F("ComputeMovingAveragesV2Handler: SEARCHING FOR EXISTING WINDOW STRUCT indexptr:\t"),6);
       DebugPrint(String(indexptr),6);
       DebugPrint(F("\n"),6);
 
-      DebugPrint(F("STRUCT WINDOW LENGTH:"),6);
+      DebugPrint(F("ComputeMovingAveragesV2Handler: STRUCT WindowLength RequestedWindowLength:\t"),6);
       DebugPrint(String(MovingAveragesStructV2ptr[indexptr]->WindowLength),6);
-      DebugPrint(F("\n"),6);
+      DebugPrint(F("\t"),6);
       
-      DebugPrint(F("REQUESTED WINDOW LENGTH:"),6);
       DebugPrint(String(WindowLengths[indexWindows]),6);
       DebugPrint(F("\n"),6);
       
@@ -494,7 +506,7 @@ void ComputeMovingAveragesV2Handler()
       {
         // found the struct we will use
         FoundStruct = true;
-        DebugPrint(F("FOUND STRUCT:"),6);
+        DebugPrint(F("ComputeMovingAveragesV2Handler: FOUND STRUCT indexptr:\t"),6);
         DebugPrint(String(indexptr),6);
         DebugPrint(F("\n"),6);
 
@@ -502,16 +514,16 @@ void ComputeMovingAveragesV2Handler()
         {
           //Perform MovingAverageCalculation : subtract oldest sample, add new one and divide by k;
           
-          DebugPrint(F("USING MA CALCULATION MODE:"),6);
+          DebugPrint(F("ComputeMovingAveragesV2Handler: USING MA CALCULATION MODE indexptr:\t"),6);
           DebugPrint(String(indexptr),6);
-          DebugPrint(F("\n"),6);
+          DebugPrint(F("\n\n"),6);
 
           
           for (uint8_t indextype = 0; indextype < 15; indextype++)
           {
               // update using moving average update formula
 
-              DebugPrint(F("CALCULATING FOR INDEXTYPE:"),6);
+              DebugPrint(F("ComputeMovingAveragesV2Handler: CALCULATING FOR indextype:\t"),6);
               DebugPrint(String(indextype),6);
               DebugPrint(F("\n"),6);
 
@@ -521,11 +533,10 @@ void ComputeMovingAveragesV2Handler()
               if (OldestSampleToDropIndex < 0) {OldestSampleToDropIndex += nbvalues;}
 
 
-              DebugPrint(F("DROPPING VALUE INDEX:"),6);
+              DebugPrint(F("ComputeMovingAveragesV2Handler: DROPPING/ADDING VALUE OldestSampleToDropIndex SampletoAddIndex:\t"),6);
               DebugPrint(String(OldestSampleToDropIndex),6);
-              DebugPrint(F("\n"),6);
+              DebugPrint(F("\t"),6);
 
-              DebugPrint(F("ADDING VALUE INDEX:"),6);
               DebugPrint(String(SampleToAddIndex),6);
               DebugPrint(F("\n"),6);
               
@@ -539,19 +550,17 @@ void ComputeMovingAveragesV2Handler()
         {
 
 
-          DebugPrint(F("USING CA CALCULATION MODE:"),6);
+          DebugPrint(F("ComputeMovingAveragesV2Handler: USING CA CALCULATION MODE indexptr:\t"),6);
           DebugPrint(String(indexptr),6);
-          DebugPrint(F("\n"),6);
+          DebugPrint(F("\n\n"),6);
 
 
           for (uint8_t indextype = 0; indextype < 15; indextype++)
           {
 
-              DebugPrint(F("CALCULATING FOR INDEXTYPE:"),6);
+              DebugPrint(F("ComputeMovingAveragesV2Handler: CALCULATING FOR indextype (FillNbValues-1):\t"),6);
               DebugPrint(String(indextype),6);
-              DebugPrint(F("\n"),6);
-
-              DebugPrint(F("ADDING VALUE INDEX:"),6);
+              DebugPrint(F("\t"),6);
               DebugPrint(String(myCircularBufferValuesStruct.FillNbValues -1),6);
               DebugPrint(F("\n"),6);
 
@@ -561,13 +570,13 @@ void ComputeMovingAveragesV2Handler()
           }
         }
 
-        DebugPrint(F("BREAK\n"),6);
+        DebugPrint(F("ComputeMovingAveragesV2Handler: BREAK\n"),6);
         break;  
       }
     }
 
 
-    DebugPrint(F("BEFORE NOT FOUNDSTRUCT\n"),6);
+    DebugPrint(F("ComputeMovingAveragesV2Handler: STRUCT NOT FOUND for windowLength\n\n"),6);
       
     
     // We couldn't find an existing struct for this windowLength
@@ -577,7 +586,7 @@ void ComputeMovingAveragesV2Handler()
       for(uint8_t indexptr = 0; indexptr<5; indexptr++)
       {
 
-          DebugPrint(F("CHECK IF FOLLOWING INDEXPTR STRUCT IS FREE:"),6);
+          DebugPrint(F("ComputeMovingAveragesV2Handler: CHECK IF STRUCT IS FREE indexptr:\t"),6);
           DebugPrint(String(indexptr),6);
           DebugPrint(F("\n"),6);
 
@@ -586,7 +595,7 @@ void ComputeMovingAveragesV2Handler()
         if(MovingAveragesStructV2ptr[indexptr]->WindowLength == 0)
         {
 
-          DebugPrint(F("FOUND FREE:"),6);
+          DebugPrint(F("ComputeMovingAveragesV2Handler: FOUND FREE STRUCT indexptr:\t"),6);
           DebugPrint(String(indexptr),6);
           DebugPrint(F("\n"),6);
 
@@ -598,19 +607,21 @@ void ComputeMovingAveragesV2Handler()
           // find the oldest sample index
 
 
-          DebugPrint(F("NB SAMPLES TO PROCESS:"),6);
+          DebugPrint(F("ComputeMovingAveragesV2Handler: NbSamplesToProcess OldestSampleIndex:\t"),6);
           DebugPrint(String(NbSamplesToProcess),6);
-          DebugPrint(F("\n"),6);
+          DebugPrint(F("\t"),6);
 
 
           int8_t OldestSampleIndex = myCircularBufferValuesStruct.NextWriteIndex - NbSamplesToProcess;
 
-          if (OldestSampleIndex < 0) {OldestSampleIndex += nbvalues;}
+          if (OldestSampleIndex < 0) 
+          {
+            OldestSampleIndex += nbvalues;
+          }
 
 
-          DebugPrint(F("OLDEST SAMPLE INDEX:"),6);
           DebugPrint(String(OldestSampleIndex),6);
-          DebugPrint(F("\n"),6);
+          DebugPrint(F("\n\n"),6);
 
 
           // work from here upwards
@@ -619,11 +630,10 @@ void ComputeMovingAveragesV2Handler()
             for (uint8_t indextype = 0; indextype < 15; indextype++)
             {
 
-              DebugPrint(F("PROCESSING INDEXTYPE (ADDING):"),6);
+              DebugPrint(F("ComputeMovingAveragesV2Handler: PROCESSING INDEXTYPE (ADD) indextype valueaddress\t:"),6);
               DebugPrint(String(indextype),6);
-              DebugPrint(F("\n"),6);
+              DebugPrint(F("\t"),6);
 
-              DebugPrint(F("VALUEADDRESS:"),6);
               DebugPrint(String(indexval%nbvalues),6);
               DebugPrint(F("\n"),6);
 
@@ -643,8 +653,10 @@ void ComputeMovingAveragesV2Handler()
 
           for (uint8_t indextype = 0; indextype < 15; indextype++)
             {
-              DebugPrint(F("PROCESSING INDEXTYPE (DIVIDE BY NBSAMPLESTOPROCESS):"),6);
+              DebugPrint(F("ComputeMovingAveragesV2Handler: PROCESSING INDEXTYPE (DIVIDE BY NBSAMPLESTOPROCESS): indextype NbSamplesToProcess"),6);
               DebugPrint(String(indextype),6);
+              DebugPrint(F("\t"),6);
+              DebugPrint(String(NbSamplesToProcess),6);
               DebugPrint(F("\n"),6);
 
               MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] /= NbSamplesToProcess;
@@ -662,116 +674,12 @@ void ComputeMovingAveragesV2Handler()
         }
       }
     }
-      DebugPrint(F("EXIT INDEXWINDOWS\n"),6);
+      DebugPrint(F("\nComputeMovingAveragesV2Handler: EXIT INDEXWINDOWS\n"),6);
   }
 
-    DebugPrint(F("EXIT FUNCTION\n"),6);
+    DebugPrint(F("\nComputeMovingAveragesV2Handler: EXIT call\n"),6);
   
 }
-/*
-void ComputeMovingAveragesHandler()
-{
-  //Serial.println("run at millis:");
-  //Serial.println(millis());
-  static uint16_t Definednbsamples = 10;
-  static int Index = 0;
-  int ClearIndex;
-  int MaxIndex;
-  int IndexAverage;
-  int IndexType;
-  long ret = 0;
-  static bool FirstRun = true;
-  static double HistoryBuffer[5][60];
-  // 60 is the upper limit for the number of samples stored. The
-  double Averages[5];
-  
-  //return;
-
-// Now that we have instantaneous values let's calculate moving averages
-// We ignore energy (indextype < 5) because it an integrator of power over an indefinite period (until resetted)  
-// makes no sense to get an average value.
-
-  for (IndexType = 0;IndexType <5; IndexType++)
-  {
-    Averages[IndexType] = 0.0;
-  }
-
-
-  //delay(long(periodSeconds/nbsamples)*1000);
-
-  // first we have to check that the sampling resolution has not changed between calls
-  // if it has changed, we will reinitialize the moving average calculation 
-  if (Definednbsamples == myMovingAveragesStruct.NbSamples)
-  {
-    for (IndexType = 0;IndexType <5; IndexType++)
-    {
-      HistoryBuffer[IndexType][Index] = NowValues[IndexType];
-    }
-   // compute all averages
-    if (!FirstRun)
-    {
-      MaxIndex = Definednbsamples;
-    }
-    else
-    {
-      MaxIndex = Index + 1;
-    }
-   
-    for(IndexAverage=0;IndexAverage<MaxIndex;IndexAverage++)
-    {
-     for (IndexType = 0;IndexType <5; IndexType++)
-      {
-        Averages[IndexType] += HistoryBuffer[IndexType][IndexAverage];
-        
-      }
-  }
-
-    for (IndexType = 0;IndexType <5; IndexType++)
-      {
-        Averages[IndexType] = Averages[IndexType]/MaxIndex;           
-      }
-    
-    if (++Index > Definednbsamples -1) {Index = 0; FirstRun = false;}
-
-  }
-  else
-  {
-    // use constrain
-    Definednbsamples = constrain(myMovingAveragesStruct.NbSamples,0,60);
-
-    for(ClearIndex=0;ClearIndex<60;ClearIndex++)
-    {
-      for (IndexType = 0;IndexType <5; IndexType++)
-      {
-        HistoryBuffer[IndexType][ClearIndex] = 0.0;
-      }
-    
-    }
-    Index = 0;
-    FirstRun = true;
- 
-    for (IndexType = 0;IndexType <5; IndexType++)
-    {
-      myMovingAveragesStruct.MovingAverageValues[IndexType] = NowValues[IndexType];
-    }
-
-    FillAverageValuesRegisters();
-    return;
-
-  }
-
-  for (IndexType = 0;IndexType <5; IndexType++)
-  {
-    
-    myMovingAveragesStruct.MovingAverageValues[IndexType] = Averages[IndexType];
- 
-  }
-
-  FillAverageValuesRegisters();
-  //if (!(Index == 0 && FirstRun)) {Index++;}
-  
-}
-*/
 
 void SelectPZEM(uint8_t PZEMID)
 {
@@ -808,7 +716,10 @@ void SelectPZEM_v2(uint8_t PZEMID)
 {
 
   pinMode(ADG333A_IN1_PIN,OUTPUT);
+  pinMode(ADG333A_IN2_PIN,OUTPUT);
+  pinMode(ADG333A_IN3_PIN,OUTPUT);
   pinMode(ADG333A_IN4_PIN,OUTPUT);
+
 
   switch (PZEMID)
   {
@@ -829,6 +740,7 @@ void SelectPZEM_v2(uint8_t PZEMID)
 // switching RX line
     digitalWrite(ADG333A_IN3_PIN,LOW);
     digitalWrite(ADG333A_IN4_PIN,HIGH);
+    break;
 
     case 2:
 
@@ -838,6 +750,7 @@ void SelectPZEM_v2(uint8_t PZEMID)
 // switching RX line
     digitalWrite(ADG333A_IN3_PIN,LOW);
     digitalWrite(ADG333A_IN4_PIN,LOW);
+    break;
 
   }
 }
@@ -846,9 +759,13 @@ void FillNowValuesAndRegisters()
 {
 
   long ret = 0;
-  for (uint8_t i = 0; i < 2; i++)
+  for (uint8_t i = 0; i < 3; i++)
   {
-    SelectPZEM(i);
+    DebugPrint(F("FillNowValuesAndRegisters: PZEM:\t"),1);
+    DebugPrint(i,1);
+    DebugPrint(F("\n"),1);
+
+    SelectPZEM_v2(i);
     delay(1000);
     float voltage = pzem.voltage(); 
     float current = pzem.current();
@@ -1013,7 +930,7 @@ void ProcessFormulas()
   if(ModbusRTUServer.coilRead(1) == 1)
   {
     uint16_t FormulaDataBaseAddress = 151;
-    DebugPrint(F("FORMULA UPDATE:"),5);
+    DebugPrint(F("ProcessFormulas: FORMULA UPDATE: indexptr:\t"),5);
     uint16_t MAWindowAndFormulaSlot;
     uint8_t MAWindowAndFormulaSlotArray[2];
     uint8_t indexptr;
@@ -1021,20 +938,21 @@ void ProcessFormulas()
     MAWindowAndFormulaSlot = ModbusRTUServer.holdingRegisterRead(FormulaDataBaseAddress);
     memcpy(&MAWindowAndFormulaSlotArray,&MAWindowAndFormulaSlot,sizeof(MAWindowAndFormulaSlot));
     indexptr = MAWindowAndFormulaSlotArray[0];
+    
     DebugPrint(String(indexptr),5);
     DebugPrint(F("\n"),5);
+
     if (indexptr < 5)
     {
 
       TripFormulaDataStructptr[indexptr]->MAWindowSeconds = constrain(MAWindowAndFormulaSlotArray[1],1,nbvalues);
       TripFormulaDataStructptr[indexptr]->HighOrLowOnFormulaTrue = ModbusRTUServer.coilRead(2);
-      DebugPrint(F("MA WINDOWS SEC:"),5);
+      DebugPrint(F("ProcessFormulas: MAWindowSeconds HighOrLowOnFormulaTrue FormulaChars DryRun isTripRecoveryStrategyAuto TripRecoveryDuration PinsList:\t"),5);
       DebugPrint(String(TripFormulaDataStructptr[indexptr]->MAWindowSeconds),5);
-      DebugPrint(F("\n"),5);
+      DebugPrint(F("\t"),5);
       
-      DebugPrint(F("HIGH OR LOW:"),5);
       DebugPrint(String(TripFormulaDataStructptr[indexptr]->HighOrLowOnFormulaTrue),5);
-      DebugPrint(F("\n"),5);
+      DebugPrint(F("\t"),5);
       
 
       char FormulaChars[64];
@@ -1058,9 +976,8 @@ void ProcessFormulas()
       //TripFormulaDataStructptr[indexptr]->FormulaChars = FormulaChars;
 
 
-      DebugPrint(F("FORMULA CHARS:"),5);
       DebugPrint(String(FormulaChars),5);
-      DebugPrint(F("\n"),5);
+      DebugPrint(F("\t"),5);
     
 
 
@@ -1068,17 +985,14 @@ void ProcessFormulas()
       TripFormulaDataStructptr[indexptr]->isTripRecoveryStrategyAuto = ModbusRTUServer.coilRead(4);
       TripFormulaDataStructptr[indexptr]->TripRecoveryDurationSeconds = ModbusRTUServer.holdingRegisterRead(FormulaDataBaseAddress + 5);
       
-      DebugPrint(F("FORMULA DRY RUN:"),5);
       DebugPrint(String(TripFormulaDataStructptr[indexptr]->FormulaDryRun),5);
-      DebugPrint(F("\n"),5);
+      DebugPrint(F("\t"),5);
     
-      DebugPrint(F("FORMULA TRIP REC STRATEGY:"),5);
       DebugPrint(String(TripFormulaDataStructptr[indexptr]->isTripRecoveryStrategyAuto),5);
-      DebugPrint(F("\n"),5);
+      DebugPrint(F("\t"),5);
 
-      DebugPrint(F("TRIP RECOVERY DURATION:"),5);
       DebugPrint(String(TripFormulaDataStructptr[indexptr]->TripRecoveryDurationSeconds),5);
-      DebugPrint(F("\n"),5);
+      DebugPrint(F("\t"),5);
     
 
 
@@ -1104,7 +1018,6 @@ void ProcessFormulas()
       memcpy(&(TripFormulaDataStructptr[indexptr]->DigitalPinsList), &DigitalPinsList, sizeof(DigitalPinsList));
   
 
-      DebugPrint(F("PINS LIST:"),5);
       
       for(uint8_t indexpins = 0; indexpins < 8; indexpins++)
       {
@@ -1120,7 +1033,7 @@ void ProcessFormulas()
     else
     {
       // not a valid formula slot
-      DebugPrint(F("NOT A VALID FORMULA SLOT\n"),5);
+      DebugPrint(F("ProcessFormulas: NOT A VALID FORMULA SLOT\n"),5);
     
     }
 
@@ -1129,13 +1042,13 @@ void ProcessFormulas()
     
   }
     
-  DebugPrint(F("WILL PARSE FORMULAS\n"),5);
+  DebugPrint(F("ProcessFormulas: WILL PARSE FORMULAS\n\n"),5);
     
   // parse_formulas
   for(uint8_t indexptr = 0; indexptr<5; indexptr++)
   {
     // check if formula slot is used
-    DebugPrint(F("FORMULA INDEX:"),5);
+    DebugPrint(F("ProcessFormulas: FORMULA indexptr:\t"),5);
     DebugPrint(indexptr,5);
     DebugPrint(F("\n"),5);    
     
@@ -1143,7 +1056,7 @@ void ProcessFormulas()
     {
       double result;
       bool bool_result;
-      DebugPrint(F("THIS FORMULA SLOT IS USED\n"),5);
+      DebugPrint(F("ProcessFormulas: THIS FORMULA SLOT IS USED\n"),5);
       
       EvalLogicalExpression(TripFormulaDataStructptr[indexptr]->MAWindowSeconds,TripFormulaDataStructptr[indexptr]->FormulaChars,result);
       bool_result = bool(result);
@@ -1151,7 +1064,7 @@ void ProcessFormulas()
       if ((bool_result) && !(TripFormulaDataStructptr[indexptr]->FormulaDryRun))
       {
         // this is not a drill. toggle pins
-        DebugPrint(F("NOT A DRILL, TOGGLE PINS\n"),5);
+        DebugPrint(F("ProcessFormulas: NOT A DRILL, TOGGLE PINS:\t"),5);
         TripFormulaDataStructptr[indexptr]->IsTripped = true;
         // reset current trip recovery duration
         TripFormulaDataStructptr[indexptr]->CurrentTripRecoveryDurationSeconds = 0;
@@ -1159,10 +1072,13 @@ void ProcessFormulas()
         for(uint8_t digitalPinsListIndex = 0; digitalPinsListIndex < 8; digitalPinsListIndex++)
         {
           digitalWrite(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],TripFormulaDataStructptr[indexptr]->HighOrLowOnFormulaTrue);
-          DebugPrint(F("TOGGLING PIN:"),5);
           DebugPrint(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],5);
+          DebugPrint(F(" "),5);
           DebugPrint(F("\n"),5);
         }
+        
+        DebugPrint(F("\n"),5);
+       
       }
       else if (!bool_result)
       {
@@ -1170,7 +1086,7 @@ void ProcessFormulas()
         if ((TripFormulaDataStructptr[indexptr]->IsTripped) && (TripFormulaDataStructptr[indexptr]->isTripRecoveryStrategyAuto))
         {
 
-          DebugPrint(F("CAN WE RECOVER?\n"),5);
+          DebugPrint(F("ProcessFormulas: CAN WE RECOVER?\t"),5);
             
           // since ProcessFormulas() is triggered by an ISR every second, we can increment this way.
           if (++(TripFormulaDataStructptr[indexptr]->CurrentTripRecoveryDurationSeconds) >= (TripFormulaDataStructptr[indexptr]->TripRecoveryDurationSeconds))
@@ -1178,31 +1094,32 @@ void ProcessFormulas()
             // we can recover from trip, no need to recover if formula is dry run
             if (!TripFormulaDataStructptr[indexptr]->FormulaDryRun)
             {
-              DebugPrint(F("YES. RECOVER\n"),5);
+              DebugPrint(F("YES.\tTOGGLING PINS:\t"),5);
               for(uint8_t digitalPinsListIndex = 0; digitalPinsListIndex < 8; digitalPinsListIndex++)
               {
                 digitalWrite(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],!(TripFormulaDataStructptr[indexptr]->HighOrLowOnFormulaTrue));
-                DebugPrint(F("TOGGLING PIN:"),5);
                 DebugPrint(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],5);
-                DebugPrint(F("\n"),5);
+                DebugPrint(F(" "),5);
+                
               }
+              DebugPrint(F("\n"),5);
 
             }
             else
             {
-              DebugPrint(F("NO RECOVER: NOT NEEDED, DRY RUN\n"),5);
+              DebugPrint(F("NO.\tRECOVER NOT NEEDED, DRY RUN\n"),5);
             }
               
           }
           else
           {
-            DebugPrint(F("NO RECOVER: RECOVERY WINDOW NOT ELASPED\n"),5);
+            DebugPrint(F("NO.\tRECOVERY WINDOW NOT ELASPED\n"),5);
           }
         
         }
         else
         {
-          DebugPrint(F("NO RECOVER: EITHER NOT TRIPPED, OR MANUAL RECOVERY\n"),5);
+          DebugPrint(F("ProcessFormulas: EITHER NOT TRIPPED, OR MANUAL RECOVERY\n"),5);
         }
             
       }
@@ -1213,33 +1130,39 @@ void ProcessFormulas()
 }
 
 
-void setup() {
+void setup() 
+{
+  
   Serial.begin(9600);
   Serial1.begin(9600);
   delay(1000);
-  Serial.println("Modbus RTU Server Init");
-  Serial.flush();
-
+  DebugPrint(F("setup: Modbus RTU Server Init\n"),0);
+  
   //EvalLogicalExpression(5);
-  Serial.flush();
+
 
 if (linetest)
 
 {
     while(true)
     {
-      Serial1.println("1234567890abcdefghijklmnopqrstuvwxyz");
-      Serial1.flush();
+      DebugPrint(F("setup: 1234567890abcdefghijklmnopqrstuvwxyz\n"),0);
       delay(1000);
     }
 }
 
-  //DeviceAddress = GetDeviceAddress({13,14,15,16,17,18,19,20});
-  // start the Modbus RTU server, with (slave) id based on DIP switch encoded address
-  //if (!ModbusRTUServer.begin(DeviceAddress, 9600)) {
-  if (!ModbusRTUServer.begin(1, 9600)) {
+  // GetDeviceAddress first argument is array of pin from lsb to msb, second argument is the pin supplying digital high voltage
+  uint8_t DeviceAddressPins[8] = {37,38,39,40,41,42,43,44};
+  DeviceAddress = GetDeviceAddress(DeviceAddressPins,36);
+  DebugPrint(F("setup: DeviceAddress:\t"),0);
+  DebugPrint(String(DeviceAddress),0);
+  DebugPrint(F("\n"),1);
   
-    Serial.println(F("Failed to start Modbus RTU Server!"));
+  
+  // start the Modbus RTU server, with device id based on DIP switch encoded address
+  if (!ModbusRTUServer.begin(DeviceAddress, 9600)) 
+  {
+    DebugPrint(F("setup:Failed to start Modbus RTU Server!\n"),0);
     while (1);
   }
 
@@ -1260,38 +1183,48 @@ if (linetest)
   long ret;
   // configure a single coil at address 0x00
   ret = ModbusRTUServer.configureCoils(0, numCoils);
-  Serial.print(F("configure: "));
-  Serial.println(ret);
+  DebugPrint(F("setup: config coils:\t"),1);
+  DebugPrint(String(ret),1);
+  DebugPrint(F("\n"),1);
   
-  // configure discrete inputs at address 0x00
+  // configure discrete inputs at address 0x40
   ret = ModbusRTUServer.configureDiscreteInputs(40, numDiscreteInputs);
-  Serial.print(F("configure: "));
-  Serial.println(ret);
+  DebugPrint(F("setup: config discrete inputs:\t "),1);
+  DebugPrint(String(ret),1);  
+  DebugPrint(F("\n"),1);
   
-  // configure holding registers at address 0x00
+  // configure holding registers at address 0x80
   ret = ModbusRTUServer.configureHoldingRegisters(80, numHoldingRegisters);
-  Serial.print(F("configure: "));
-  Serial.println(ret);
+  DebugPrint(F("setup: config holding registers:\t"),1);
+  DebugPrint(String(ret),1);
+  DebugPrint(F("\n"),1);
   
 
   // configure input registers at address 0x00
   ret = ModbusRTUServer.configureInputRegisters(200, numInputRegisters);
-  Serial.print(F("configure: "));
-  Serial.println(ret);
-
+  DebugPrint(F("setup: config input registers:\t"),1);
+  DebugPrint(String(ret),1);
+  DebugPrint(F("\n"),1);
+  
   FillNowValuesAndRegisters(); // making sure that values are filled before timer5 is started
 
   ITimer5.init();
+
   if (ITimer5.attachInterruptInterval(10, TimerHandler))
   {
-    Serial.print(F("Starting  ITimer5 OK, millis() = ")); Serial.println(millis());
+    DebugPrint(F("setup: Starting  ITimer5 OK, millis() =\t"),1); 
+    DebugPrint(String(millis()),1);
+    DebugPrint(F("\n"),1);
   }
   else
-    Serial.println(F("Can't set ITimer5. Select another freq. or timer"));
+    DebugPrint(F("setup: Can't set ITimer5. Select another freq. or timer"),1);
 
 
   MovingAveragesTimerNumber = ISR_timer.setInterval(1000, ComputeMovingAveragesV2Handler);
 
+  DebugPrint(F("setup: ISR_timer set for Moving averages. Timer number=\t"),1); 
+  DebugPrint(String(MovingAveragesTimerNumber),1);
+  DebugPrint(F("\n"),1);
 
 
 }
@@ -1318,16 +1251,25 @@ void loop() {
     uint16_t millisAtSyncedEpochRegisters[2]; // store the internal millis clock when time sync was performed
   
 
-    Serial.println(F("Ready for clock sync"));
+    DebugPrint(F("loop: Ready for clock sync"),1);
+    DebugPrint(F("\n"),1);
     timeoutStartMillis = millis();
     while(true)
     {
-      if ((millis() - timeoutStartMillis) > timeoutSyncMillis) {Serial.println("time sync timeout");break;}
+      if ((millis() - timeoutStartMillis) > timeoutSyncMillis) 
+      {
+        DebugPrint(F("loop: time sync timeout"),1);
+        DebugPrint(F("\n"),1);
+        break;
+      }
+
       ModbusRTUServer.poll();
       uint8_t addr;
       if(ModbusRTUServer.coilRead(0) == 0)
       {
-        Serial.println(F("time received"));
+        DebugPrint(F("loop: time received"),1);
+        DebugPrint(F("\n"),1);
+        
         uint8_t k;
         for(k=0;k<4;k++)
         {
@@ -1339,28 +1281,60 @@ void loop() {
         epochMillis = ModbusRTUServer.holdingRegisterRead(addr);
         memcpy(&epochSeconds,epochSecondsRegisters,sizeof(epochSeconds));
         time = epochSeconds + 1;
-        Serial.println(epochSecondsRegisters[0]);
-        Serial.println(epochSecondsRegisters[1]);
-        Serial.println(epochSecondsRegisters[2]);
-        Serial.println(epochSecondsRegisters[3]);
-        Serial.println(epochSecondsRegisters[4]);
-
-        Serial.println(F("epochseconds"));
+        
+        DebugPrint(F("loop: epochregisters:\t"),5);
+        
+        DebugPrint(String(epochSecondsRegisters[0]),5);
+        DebugPrint(F("\t"),5);
+        
+        DebugPrint(String(epochSecondsRegisters[1]),5);
+        DebugPrint(F("\t"),5);
+        
+        DebugPrint(String(epochSecondsRegisters[2]),5);
+        DebugPrint(F("\t"),5);
+        
+        DebugPrint(String(epochSecondsRegisters[3]),5);
+        DebugPrint(F("\t"),5);
+        
+        DebugPrint(String(epochSecondsRegisters[4]),5);
+        DebugPrint(F("\t"),5);
+        
+        DebugPrint(F("loop: epochseconds:\t"),2);
         Serial.println(long(epochSeconds));
         
         
-        Serial.println(hour(time));
-        Serial.println(minute(time));
-        Serial.println(second(time));
-        Serial.println(day(time));
-        Serial.println(month(time));
-        Serial.println(year(time));
+        DebugPrint(F("loop: year month day hour minute second d:\t"),1);
+
+        DebugPrint(String(year(time)),1);
+        DebugPrint(F("\t"),1);
+
+        DebugPrint(String(month(time)),1);
+        DebugPrint(F("\t"),1);
+
+        DebugPrint(String(day(time)),1);     
+        DebugPrint(F("\t"),1);
+
+        DebugPrint(String(hour(time)),1);
+        DebugPrint(F("\t"),1);
+
+        DebugPrint(String(minute(time)),1);
+        DebugPrint(F("\t"),1);
+
+        DebugPrint(String(second(time)),1);
+        DebugPrint(F("\n"),1);
+
+        DebugPrint(F("loop: Enabling Moving Averages Timer"),1);
+        DebugPrint(F("\n"),1);
+
         ISR_timer.enable(MovingAveragesTimerNumber);
     
         break;
         
       }
       
+      DebugPrint(F("loop: Writing time sync stamp to Modbus Registers"),1);
+      DebugPrint(F("\n"),1);
+                
       memcpy(millisAtSyncedEpochRegisters,&millisAtSyncedEpoch,sizeof(millisAtSyncedEpochRegisters));
       ModbusRTUServer.inputRegisterWrite(200,millisAtSyncedEpochRegisters[0]);
       ModbusRTUServer.inputRegisterWrite(201,millisAtSyncedEpochRegisters[1]);
@@ -1368,126 +1342,83 @@ void loop() {
     }
   }
 
-  //delay(1000);
-  // average loop time = 7.5 ms (fastest update rate)
-  //Serial.print("ret");
-  //Serial.println(ret);
-  //Serial.println(ModbusRTUServer.lastError());
-//  Serial.println("after poll");
-/*
-      Serial.println(hour(time));
-        Serial.println(minute(time));
-        Serial.println(second(time));
-        Serial.println(day(time));
-        Serial.println(month(time));
-        Serial.println(year(time));
-  */
   FillNowValuesAndRegisters();
   ProcessFormulas();
 
-  /*
-  DebugPrint(F("MILLIS_BEFORE:"),2);
-  DebugPrint(String(millis()),2);
+ 
+  DebugPrint(F("loop: PZEM voltage L1 L2 L3:\t"),2);
+
+  DebugPrint(String(NowValues[0]),2);
+  DebugPrint(F("\t"),2);
+
+  DebugPrint(String(NowValues[1]),2);
+  DebugPrint(F("\t"),2);
+
+  DebugPrint(String(NowValues[2]),2);
+  DebugPrint(F("\n"),2);
+
+  
+  DebugPrint(F("loop: PZEM current L1 L2 L3:\t"),2);
+
+  DebugPrint(String(NowValues[3]),2);
+  DebugPrint(F("\t"),2);
+
+  DebugPrint(String(NowValues[4]),2);
+  DebugPrint(F("\t"),2);
+
+  DebugPrint(String(NowValues[5]),2);
+  DebugPrint(F("\n"),2);
+
+  DebugPrint(F("loop: PZEM power L1 L2 L3:\t"),2);
+  
+  DebugPrint(String(NowValues[6]),2);
+  DebugPrint(F("\t"),2);
+
+  DebugPrint(String(NowValues[7]),2);
+  DebugPrint(F("\t"),2);
+
+  DebugPrint(String(NowValues[8]),2);
+  DebugPrint(F("\n"),2);
+
+
+  DebugPrint(F("loop: PZEM frequency L1 L2 L3:\t"),2);
+  
+  DebugPrint(String(NowValues[9]),2);
+  DebugPrint(F("\t"),2);
+
+  DebugPrint(String(NowValues[10]),2);
+  DebugPrint(F("\t"),2);
+
+  DebugPrint(String(NowValues[11]),2);
+  DebugPrint(F("\n"),2);
+
+  DebugPrint(F("loop: PZEM power factor L1 L2 L3:\t"),2);
+  
+  DebugPrint(String(NowValues[12]),2);
+  DebugPrint(F("\t"),2);
+
+  DebugPrint(String(NowValues[13]),2);
+  DebugPrint(F("\t"),2);
+
+  DebugPrint(String(NowValues[14]),2);
+  DebugPrint(F("\n"),2);
+
+  DebugPrint(F("loop: PZEM energy L1 L2 L3:\t"),2);
+
+  
+  DebugPrint(String(NowValues[15]),2);
+  DebugPrint(F("\t"),2);
+
+  DebugPrint(String(NowValues[16]),2);
+  DebugPrint(F("\t"),2);
+
+  DebugPrint(String(NowValues[17]),2);
   DebugPrint(F("\n"),2);
   
-  */
- /*
-  Serial.println(NowValues[0]);
-  Serial.println(NowValues[1]);
-  Serial.println(NowValues[2]);
-  Serial.println(NowValues[3]);
-  Serial.println(NowValues[4]);
-  Serial.println(NowValues[5]);
-  */
 
- // testing an update of the MA Windows
-  
-  /*
-  if(millis() > 100000)
-  {
-    //Serial.println("############updating MAS############");
-    WindowLengths[0] = 5;
-    WindowLengths[1] = 15;
-    
-  }
-  */
-
-  //ComputeMovingAveragesV2Handler(WindowLengths);
-
-/*
-  if(int(millis()/1000.0)%10 == 0)
-  {
-  Serial.print("MA");
-  Serial.println(WindowLengths[0]);
-  Serial.println(MovingAveragesStructV2ptr[0]->MovingAverageValues[0]);
-  Serial.print("MA");
-  Serial.println(WindowLengths[1]);
-  Serial.println(MovingAveragesStructV2ptr[1]->MovingAverageValues[0]);
-  }
-*/
-  /*
-  DebugPrint(F("MILLIS_AFTER:"),2);
-  DebugPrint(String(millis()),2);
-  DebugPrint(F("\n"),2);
-  */
 
   Anyerror = false;
-  //double NowValues[5];
-  //double MovingAverageValues[5];
 
-  //if (!Anyerror)
-
-  //{
-    
-    //ComputeMovingAverages(60,60,NowValues,MovingAverageValues);
-    //ModbusRTUServer.poll();
-    /*
-    Serial.print("VoltageAvg: ");
-    Serial.println(myMovingAveragesStruct.MovingAverageValues[0]);
-    Serial.print("CurrentAvg: ");
-    Serial.println(myMovingAveragesStruct.MovingAverageValues[1]);
-    Serial.print("PowerAvg: ");
-    Serial.println(myMovingAveragesStruct.MovingAverageValues[2]);
-    Serial.print("FrequencyAvg: ");
-    Serial.println(myMovingAveragesStruct.MovingAverageValues[3]);
-    Serial.print("PowerFactorAvg: ");
-    Serial.println(myMovingAveragesStruct.MovingAverageValues[4]);
-    Serial.flush();
-    
-
-    Serial.print("Voltage: ");
-    Serial.println(NowValues[0]);
-    Serial.print("Current: ");
-    Serial.println(NowValues[1]);
-    Serial.print("Power: ");
-    Serial.println(NowValues[2]);
-    Serial.print("Frequency: ");
-    Serial.println(NowValues[3]);
-    Serial.print("PowerFactor: ");
-    Serial.println(NowValues[4]);
-    Serial.print("Energy: ");
-    Serial.println(NowValues[5]);
-    Serial.flush();
-    */
-
-  //}
-
-  // read the current value of the coil
-  //int coilValue = ModbusRTUServer.coilRead(0x00);
-
-
-
-/*
-  if (coilValue) {
-    // coil value set, turn LED on
-    digitalWrite(ledPin, HIGH);
-  } else {
-    // coil value clear, turn LED off
-    digitalWrite(ledPin, LOW);
-  }
-*/
 }
-
-
 
 
