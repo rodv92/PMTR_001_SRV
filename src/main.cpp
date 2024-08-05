@@ -175,7 +175,41 @@ void DebugPrint(uint8_t DebugNum, uint8_t myDebugLevel)
   Serial.flush();}
 }
 
-uint8_t myPowofTwo (uint8_t p) {
+const byte numChars = 40;
+char receivedChars[numChars]; // an array to store the received data
+bool newData = false;
+
+void recvWithEndMarker(char endChar) 
+{
+  static uint8_t ndx = 0;
+  char rc;
+ 
+
+  if (Serial.available() > 0) {
+    while (Serial.available() > 0 && newData == false) {
+      rc = Serial.read();
+      //delay(10);
+      //Serial1.println(rc);
+      if (rc != endChar) {
+        receivedChars[ndx] = rc;
+        ndx++;
+      if (ndx >= numChars) {
+        ndx = numChars - 1;
+        }
+      }
+      else {
+        //Serial1.println("endmarker");
+        receivedChars[ndx] = '\0'; // terminate the string
+        ndx = 0;
+        newData = true;
+      }
+    }
+  }
+}
+
+
+uint8_t myPowofTwo (uint8_t p) 
+{
   int i = 2;
   for (int j = 1; j <= p; j++)  i *= i;
   return i;
@@ -755,6 +789,18 @@ void SelectPZEM_v2(uint8_t PZEMID)
   }
 }
 
+void PZEM_resetEnergy(uint8_t PZEMresetflag)
+{
+  for(uint8_t i=0; i<3; i++)
+  {
+    if (PZEMresetflag & (1 << i)) 
+    {
+      SelectPZEM_v2(i);
+      pzem.resetEnergy();
+    }
+  }
+}
+
 void FillNowValuesAndRegisters()
 {
 
@@ -773,7 +819,8 @@ void FillNowValuesAndRegisters()
     float frequency = pzem.frequency();
     float pf = pzem.pf();
     float energy = pzem.energy();
-    
+
+     
 
     if(!isnan(voltage)){
         //Serial.print("Voltage: "); Serial.print(voltage); Serial.println("V");
@@ -865,31 +912,11 @@ void FillNowValuesAndRegisters()
     }
     memcpy(EnergyModbusRegister, &(NowValues[15 + i]), sizeof(EnergyModbusRegister));
 
-    ret = ModbusRTUServer.holdingRegisterWrite(98 +2*i,EnergyModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(99 +2*i,EnergyModbusRegister[1]);
+    ret = ModbusRTUServer.holdingRegisterWrite(98 + 2*i,EnergyModbusRegister[0]);
+    ret = ModbusRTUServer.holdingRegisterWrite(99 + 2*i,EnergyModbusRegister[1]);
     
-
   }
     
-    // L3I
-    ret = ModbusRTUServer.holdingRegisterWrite(90,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(91,0);
-    
-    // L3P
-    ret = ModbusRTUServer.holdingRegisterWrite(96,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(97,0);  
-   
-    // L3E
-    ret = ModbusRTUServer.holdingRegisterWrite(102,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(103,0);
-    
-    // L3f
-    ret = ModbusRTUServer.holdingRegisterWrite(108,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(109,0);
-    
-    // L3pf
-    ret = ModbusRTUServer.holdingRegisterWrite(114,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(115,0);
     
 }
 
@@ -1229,12 +1256,108 @@ if (linetest)
 
 }
 
+void PrintNowValues(uint8_t DebugLevel)
+{
+
+  DebugPrint(F("PrintNowValues: PZEM voltage L1 L2 L3:\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[0]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[1]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[2]),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
+
+  
+  DebugPrint(F("PrintNowValues: PZEM current L1 L2 L3:\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[3]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[4]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[5]),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
+
+  DebugPrint(F("PrintNowValues: PZEM power L1 L2 L3:\t"),DebugLevel);
+  
+  DebugPrint(String(NowValues[6]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[7]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[8]),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
+
+
+  DebugPrint(F("PrintNowValues: PZEM frequency L1 L2 L3:\t"),DebugLevel);
+  
+  DebugPrint(String(NowValues[9]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[10]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[11]),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
+
+  DebugPrint(F("PrintNowValues: PZEM power factor L1 L2 L3:\t"),DebugLevel);
+  
+  DebugPrint(String(NowValues[12]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[13]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[14]),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
+
+  DebugPrint(F("PrintNowValues: PZEM energy L1 L2 L3:\t"),DebugLevel);
+
+  
+  DebugPrint(String(NowValues[15]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[16]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(NowValues[17]),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
+
+}
+
+void process_command()
+{
+  
+  // get now values
+  if (!(strcmp(receivedChars , "gnv")))
+  {
+    
+    PrintNowValues(0);
+  }
+
+}
+
 
 void loop() {
-  // poll for Modbus RTU requests
+  
   delay(1000);
-//  Serial.println("before poll");
 
+  // poll for serial command
+  recvWithEndMarker(":");
+
+  if(newData)
+  {
+    newData = false;
+    process_command();    
+  }
+  
+
+  // poll for Modbus RTU requests
   static uint32_t millisAtSyncedEpoch;
   static uint64_t epochSeconds;
   static uint16_t epochMillis; 
@@ -1344,79 +1467,8 @@ void loop() {
 
   FillNowValuesAndRegisters();
   ProcessFormulas();
-
- 
-  DebugPrint(F("loop: PZEM voltage L1 L2 L3:\t"),2);
-
-  DebugPrint(String(NowValues[0]),2);
-  DebugPrint(F("\t"),2);
-
-  DebugPrint(String(NowValues[1]),2);
-  DebugPrint(F("\t"),2);
-
-  DebugPrint(String(NowValues[2]),2);
-  DebugPrint(F("\n"),2);
-
+  PrintNowValues(2);
   
-  DebugPrint(F("loop: PZEM current L1 L2 L3:\t"),2);
-
-  DebugPrint(String(NowValues[3]),2);
-  DebugPrint(F("\t"),2);
-
-  DebugPrint(String(NowValues[4]),2);
-  DebugPrint(F("\t"),2);
-
-  DebugPrint(String(NowValues[5]),2);
-  DebugPrint(F("\n"),2);
-
-  DebugPrint(F("loop: PZEM power L1 L2 L3:\t"),2);
-  
-  DebugPrint(String(NowValues[6]),2);
-  DebugPrint(F("\t"),2);
-
-  DebugPrint(String(NowValues[7]),2);
-  DebugPrint(F("\t"),2);
-
-  DebugPrint(String(NowValues[8]),2);
-  DebugPrint(F("\n"),2);
-
-
-  DebugPrint(F("loop: PZEM frequency L1 L2 L3:\t"),2);
-  
-  DebugPrint(String(NowValues[9]),2);
-  DebugPrint(F("\t"),2);
-
-  DebugPrint(String(NowValues[10]),2);
-  DebugPrint(F("\t"),2);
-
-  DebugPrint(String(NowValues[11]),2);
-  DebugPrint(F("\n"),2);
-
-  DebugPrint(F("loop: PZEM power factor L1 L2 L3:\t"),2);
-  
-  DebugPrint(String(NowValues[12]),2);
-  DebugPrint(F("\t"),2);
-
-  DebugPrint(String(NowValues[13]),2);
-  DebugPrint(F("\t"),2);
-
-  DebugPrint(String(NowValues[14]),2);
-  DebugPrint(F("\n"),2);
-
-  DebugPrint(F("loop: PZEM energy L1 L2 L3:\t"),2);
-
-  
-  DebugPrint(String(NowValues[15]),2);
-  DebugPrint(F("\t"),2);
-
-  DebugPrint(String(NowValues[16]),2);
-  DebugPrint(F("\t"),2);
-
-  DebugPrint(String(NowValues[17]),2);
-  DebugPrint(F("\n"),2);
-  
-
-
   Anyerror = false;
 
 }
