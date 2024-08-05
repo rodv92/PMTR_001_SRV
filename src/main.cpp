@@ -7,6 +7,9 @@
 #include <PZEM004Tv30.h>
 #include <TimeLib.h>
 #include <expr.h>
+#include <Wire.h>
+#include <DS3231.h>
+#include <time.h>
 
 // To be included only in main(), .ino with setup() to avoid `Multiple Definitions` Linker Error
 #define USE_TIMER_1     false
@@ -19,6 +22,7 @@
 #include <SimpleTimer.h>              // https://github.com/schinken/SimpleTimer
 
 ISR_Timer ISR_timer;
+DS3231 myRTC;
 
 // The following Arduino pins are ued to switch serial2 signals to each of the 3 PZEMs using the ADG333A
 // Quad SPDT Switch
@@ -28,7 +32,7 @@ ISR_Timer ISR_timer;
 #define ADG333A_IN4_PIN 35
 
 PZEM004Tv30 pzem(&Serial2);
-time_t time;
+time_t sync_time;
 
 bool linetest = false;
 const uint16_t timeoutSyncMillis = 20000;
@@ -797,6 +801,7 @@ void PZEM_resetEnergy(uint8_t PZEMresetflag)
     {
       SelectPZEM_v2(i);
       pzem.resetEnergy();
+
     }
   }
 }
@@ -1162,6 +1167,7 @@ void setup()
   
   Serial.begin(9600);
   Serial1.begin(9600);
+  Wire.begin();
   delay(1000);
   DebugPrint(F("setup: Modbus RTU Server Init\n"),0);
   
@@ -1330,15 +1336,58 @@ void PrintNowValues(uint8_t DebugLevel)
 
 }
 
+
+void PrintCurrentTime()
+{
+  DateTime nowtime = RTClib::now();
+  time_t epoch = nowtime.unixtime();
+  time_t *epochptr = &epoch;
+  tm *nowtm;
+  char buffer[32];
+  localtime_r(epochptr, nowtm);
+  strftime(buffer, 32, "%a, %d.%m.%Y %H:%M:%S", nowtm);   
+  DebugPrint(String(buffer),0);
+}
+
+
 void process_command()
 {
   
   // get now values
+  String strreceivedchars =  String(receivedChars);
+  // gnv = get now values, print currently stored PZEM values for all phases, that were fetched by FillNowValuesAndRegisters()
   if (!(strcmp(receivedChars , "gnv")))
   {
     
     PrintNowValues(0);
   }
+  
+  // resets PZEM energy counters for the specified phases as a binary flag representation. little endian. 
+  // ex: rste 001 : resets L1 energy counter, rste 110 : resets L2 and L3 energy counters.
+  else if(strreceivedchars.startsWith("rste") && strreceivedchars.length() == 8)
+  {
+    String strPZEMbits = strreceivedchars.substring(5);
+    uint8_t PZEMbits = (uint8_t) strtoul(strPZEMbits.c_str(),nullptr,2);
+    PZEM_resetEnergy(PZEMbits);
+  }
+  else if(strreceivedchars.startsWith("time"))
+  {
+    if(strreceivedchars.length() == 4) {PrintCurrentTime();}
+    else
+    {
+      myRTC.setClockMode(false); // use 24h mode
+      String strEpoch = strreceivedchars.substring(5);
+      time_t epoch = strtoul(strEpoch.c_str(),nullptr,10);
+      myRTC.setEpoch(epoch);
+      PrintCurrentTime();
+    }
+     
+  }
+  else
+  {
+    DebugPrint(F("Invalid command"),0);
+  }
+  
 
 }
 
@@ -1403,7 +1452,7 @@ void loop() {
         addr++;
         epochMillis = ModbusRTUServer.holdingRegisterRead(addr);
         memcpy(&epochSeconds,epochSecondsRegisters,sizeof(epochSeconds));
-        time = epochSeconds + 1;
+        sync_time = epochSeconds + 1;
         
         DebugPrint(F("loop: epochregisters:\t"),5);
         
