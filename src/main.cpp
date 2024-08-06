@@ -21,6 +21,12 @@
 #include "ISR_Timer.h"
 #include <SimpleTimer.h>              // https://github.com/schinken/SimpleTimer
 
+
+uint8_t DebugLevel = 0;
+bool Anyerror = false;
+uint8_t DeviceAddress;
+
+
 ISR_Timer ISR_timer;
 DS3231 myRTC;
 
@@ -160,11 +166,6 @@ const int numHoldingRegisters = 109;
 
 const int numInputRegisters = 2;
 
-bool Anyerror = false;
-uint8_t DeviceAddress;
-
-uint8_t DebugLevel = 2;
-
 void DebugPrint(String DebugStr, uint8_t myDebugLevel)
 {
   if (myDebugLevel <= DebugLevel)
@@ -193,7 +194,7 @@ void recvWithEndMarker(char endChar)
     while (Serial.available() > 0 && newData == false) {
       rc = Serial.read();
       //delay(10);
-      //Serial1.println(rc);
+      Serial.println(rc);
       if (rc != endChar) {
         receivedChars[ndx] = rc;
         ndx++;
@@ -202,7 +203,7 @@ void recvWithEndMarker(char endChar)
         }
       }
       else {
-        //Serial1.println("endmarker");
+        Serial.println("endmarker");
         receivedChars[ndx] = '\0'; // terminate the string
         ndx = 0;
         newData = true;
@@ -1173,6 +1174,32 @@ void setup()
   
   //EvalLogicalExpression(5);
 
+  // Tell whether the time is (likely to be) valid
+	if (myRTC.oscillatorCheck()) {
+		Serial.print(" O+\n");
+	} else {
+		Serial.print(" O-\n");
+	}
+
+  	// then the date
+  bool century = false;
+  bool h12Flag;
+  bool pmFlag;
+
+	Serial.println(myRTC.getYear(), DEC);
+  Serial.println(myRTC.getMonth(century), DEC);
+  Serial.println(myRTC.getDate(), DEC);
+
+  Serial.println(myRTC.getHour(h12Flag,pmFlag), DEC);
+  Serial.println(myRTC.getMinute(), DEC);
+  Serial.println(myRTC.getSecond(), DEC);
+  
+  
+  
+  
+	Serial.print("\n");
+  
+
 
 if (linetest)
 
@@ -1341,14 +1368,33 @@ void PrintCurrentTime()
 {
   DateTime nowtime = RTClib::now();
   time_t epoch = nowtime.unixtime();
-  time_t *epochptr = &epoch;
-  tm *nowtm;
-  char buffer[32];
-  localtime_r(epochptr, nowtm);
-  strftime(buffer, 32, "%a, %d.%m.%Y %H:%M:%S", nowtm);   
+  epoch -= UNIX_OFFSET; // localtime_r expects epoch since Jan1 2000 00:00, not Jan1 1970 00:00
+  // TODO : check Y2K38 support !! (uint64_t based time_t)
+  struct tm* nowtm = localtime(&epoch);
+  
+  char buffer[64];
+  strftime(buffer, 64, "%d %m %Y %H:%M:%S", nowtm);   
   DebugPrint(String(buffer),0);
+  DebugPrint("\n",0);
+  DebugPrint(String(epoch),0);
+  DebugPrint("\n",0);
+  DebugPrint(nowtm->tm_year,0);
+  DebugPrint("\n",0);
+  DebugPrint(nowtm->tm_mon,0);
+  DebugPrint("\n",0); 
+  DebugPrint(nowtm->tm_mday,0);
+  DebugPrint("\n",0);
+  DebugPrint(nowtm->tm_hour,0);
+  DebugPrint("\n",0);
+  DebugPrint(String(nowtm->tm_min),0);
+  DebugPrint("\n",0);
+  DebugPrint(nowtm->tm_sec,0);
+  DebugPrint("\n",0);
+  
+  
+  
+  
 }
-
 
 void process_command()
 {
@@ -1397,7 +1443,7 @@ void loop() {
   delay(1000);
 
   // poll for serial command
-  recvWithEndMarker(":");
+  recvWithEndMarker(':');
 
   if(newData)
   {
