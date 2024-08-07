@@ -1374,25 +1374,37 @@ void PrintCurrentTime()
   
   char buffer[64];
   strftime(buffer, 64, "%d %m %Y %H:%M:%S", nowtm);   
+  
   DebugPrint(String(buffer),0);
   DebugPrint("\n",0);
-  DebugPrint(String(epoch),0);
-  DebugPrint("\n",0);
-  DebugPrint(nowtm->tm_year,0);
-  DebugPrint("\n",0);
-  DebugPrint(nowtm->tm_mon,0);
-  DebugPrint("\n",0); 
-  DebugPrint(nowtm->tm_mday,0);
-  DebugPrint("\n",0);
-  DebugPrint(nowtm->tm_hour,0);
-  DebugPrint("\n",0);
-  DebugPrint(String(nowtm->tm_min),0);
-  DebugPrint("\n",0);
-  DebugPrint(nowtm->tm_sec,0);
+  
+  DebugPrint("epoch (2000 based):\t",5);  
+  DebugPrint(String(epoch),5);
   DebugPrint("\n",0);
   
+  DebugPrint("years since 1900:\t",5);  
+  DebugPrint(nowtm->tm_year,5);
+  DebugPrint("\n",5);
   
-  
+  DebugPrint("months since january:\t",5);  
+  DebugPrint(nowtm->tm_mon,5);
+  DebugPrint("\n",5);
+
+  DebugPrint("day of month:\t",5);  
+  DebugPrint(nowtm->tm_mday,5);
+  DebugPrint("\n",5);
+
+  DebugPrint("hours:\t",5);  
+  DebugPrint(nowtm->tm_hour,5);
+  DebugPrint("\n",5);
+
+  DebugPrint("minutes:\t",5);  
+  DebugPrint(nowtm->tm_min,5);
+  DebugPrint("\n",5);
+
+  DebugPrint("seconds:\t",5);  
+  DebugPrint(nowtm->tm_sec,5);
+  DebugPrint("\n",5); 
   
 }
 
