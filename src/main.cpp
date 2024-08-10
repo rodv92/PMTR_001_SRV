@@ -39,6 +39,7 @@ DS3231 myRTC;
 
 PZEM004Tv30 pzem(&Serial2);
 time_t sync_time;
+uint16_t sync_offset = 6;
 
 bool linetest = false;
 const uint16_t timeoutSyncMillis = 20000;
@@ -366,67 +367,45 @@ void EvalLogicalExpression(uint8_t MAWindowSeconds, char Expression[64], double 
 
 
 
+
+
 void FillAverageValuesRegisters()
 {
 
     long ret;
-    memcpy(AvgVoltageModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[0]), sizeof(AvgVoltageModbusRegister));
-    memcpy(AvgCurrentModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[1]), sizeof(AvgVoltageModbusRegister));
-    memcpy(AvgPowerModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[2]), sizeof(AvgVoltageModbusRegister));
-    memcpy(AvgFrequencyModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[3]), sizeof(AvgVoltageModbusRegister));
-    memcpy(AvgPowerFactorModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[4]), sizeof(AvgVoltageModbusRegister));
-    
-    //L1U Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(116,AvgVoltageModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(117,AvgVoltageModbusRegister[1]);
-    //L2U Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(118,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(119,0);
-    //L3U Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(120,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(121,0);
 
-    //L1I Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(122,AvgCurrentModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(123,AvgCurrentModbusRegister[1]);
-    //L2I Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(124,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(125,0);
-    //L3I Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(126,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(127,0);
-  
-    //L1P Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(128,AvgPowerModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(129,AvgPowerModbusRegister[1]);
-    //L2P Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(130,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(131,0);
-    //L3P Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(132,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(133,0);
-  
+    for(uint8_t i=0;i<3;i++)
+    {
 
-    //L1f Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(134,AvgFrequencyModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(135,AvgFrequencyModbusRegister[1]);
-    //L2f Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(136,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(137,0);
-    //L3f Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(138,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(139,0);
+      memcpy(AvgVoltageModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[0 + i]), sizeof(AvgVoltageModbusRegister));
+      memcpy(AvgCurrentModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[3 + i]), sizeof(AvgVoltageModbusRegister));
+      memcpy(AvgPowerModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[6 + i]), sizeof(AvgVoltageModbusRegister));
+      memcpy(AvgFrequencyModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[9 + i]), sizeof(AvgVoltageModbusRegister));
+      memcpy(AvgPowerFactorModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[12 + i]), sizeof(AvgVoltageModbusRegister));
     
-    //L1pf Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(140,AvgPowerFactorModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(141,AvgPowerFactorModbusRegister[1]);
-    //L2pf Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(142,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(143,0);
-    //L3pf Avg
-    ret = ModbusRTUServer.holdingRegisterWrite(144,0);
-    ret = ModbusRTUServer.holdingRegisterWrite(145,0);
+      //U Avg
+      ret = ModbusRTUServer.holdingRegisterWrite(116 + 2*i,AvgVoltageModbusRegister[0]);
+      ret = ModbusRTUServer.holdingRegisterWrite(117 + 2*i,AvgVoltageModbusRegister[1]);
+      
+      //I Avg
+      ret = ModbusRTUServer.holdingRegisterWrite(122 + 2*i,AvgCurrentModbusRegister[0]);
+      ret = ModbusRTUServer.holdingRegisterWrite(123 + 2*i,AvgCurrentModbusRegister[1]);
     
+      //P Avg
+      ret = ModbusRTUServer.holdingRegisterWrite(128 + 2*i,AvgPowerModbusRegister[0]);
+      ret = ModbusRTUServer.holdingRegisterWrite(129 + 2*i,AvgPowerModbusRegister[1]);
+      
+      //f Avg
+      ret = ModbusRTUServer.holdingRegisterWrite(134 + 2*i,AvgFrequencyModbusRegister[0]);
+      ret = ModbusRTUServer.holdingRegisterWrite(135 + 2*i,AvgFrequencyModbusRegister[1]);
+        
+      //pf Avg
+      ret = ModbusRTUServer.holdingRegisterWrite(140 + 2*i,AvgPowerFactorModbusRegister[0]);
+      ret = ModbusRTUServer.holdingRegisterWrite(141 + 2*i,AvgPowerFactorModbusRegister[1]);
+      
+    }
+
+        
 
 }
 
@@ -1162,6 +1141,15 @@ void ProcessFormulas()
   
 }
 
+void CPL_line_test(uint8_t test_seconds)
+{
+  for(uint8_t i=0;i<test_seconds;i++)
+  {
+    Serial1.print(F("1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz\n"));
+    Serial1.flush();
+    delay(1000);
+  }
+}
 
 void setup() 
 {
@@ -1175,6 +1163,7 @@ void setup()
   //EvalLogicalExpression(5);
 
   // Tell whether the time is (likely to be) valid
+  /*
 	if (myRTC.oscillatorCheck()) {
 		Serial.print(" O+\n");
 	} else {
@@ -1193,22 +1182,15 @@ void setup()
   Serial.println(myRTC.getHour(h12Flag,pmFlag), DEC);
   Serial.println(myRTC.getMinute(), DEC);
   Serial.println(myRTC.getSecond(), DEC);
-  
-  
-  
-  
+
 	Serial.print("\n");
-  
+  */
 
 
 if (linetest)
 
 {
-    while(true)
-    {
-      DebugPrint(F("setup: 1234567890abcdefghijklmnopqrstuvwxyz\n"),0);
-      delay(1000);
-    }
+  CPL_line_test(10);
 }
 
   // GetDeviceAddress first argument is array of pin from lsb to msb, second argument is the pin supplying digital high voltage
@@ -1216,7 +1198,7 @@ if (linetest)
   DeviceAddress = GetDeviceAddress(DeviceAddressPins,36);
   DebugPrint(F("setup: DeviceAddress:\t"),0);
   DebugPrint(String(DeviceAddress),0);
-  DebugPrint(F("\n"),1);
+  DebugPrint(F("\n"),0);
   
   
   // start the Modbus RTU server, with device id based on DIP switch encoded address
@@ -1363,6 +1345,71 @@ void PrintNowValues(uint8_t DebugLevel)
 
 }
 
+void PrintAvgValues(uint8_t DebugLevel)
+{
+
+  DebugPrint(F("PrintAvgValues: PZEM voltage L1 L2 L3:\t"),DebugLevel);
+
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[0]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[1]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[2]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+
+  
+  DebugPrint(F("PrintAvgValues: PZEM current L1 L2 L3:\t"),DebugLevel);
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[3]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[4]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[5]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(F("PrintAvgValues: PZEM power L1 L2 L3:\t"),DebugLevel);
+  
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[6]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[7]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[8]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+
+  DebugPrint(F("PrintAvgValues: PZEM frequency L1 L2 L3:\t"),DebugLevel);
+  
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[9]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[10]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[11]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(F("PrintAvgValues: PZEM power factor L1 L2 L3:\t"),DebugLevel);
+  
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[12]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[13]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[14]),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+}
+
 
 void PrintCurrentTime()
 {
@@ -1419,6 +1466,12 @@ void process_command()
     
     PrintNowValues(0);
   }
+  else if (!(strcmp(receivedChars , "gav")))
+  {
+    
+    PrintAvgValues(0);
+  }
+  
   
   // resets PZEM energy counters for the specified phases as a binary flag representation. little endian. 
   // ex: rste 001 : resets L1 energy counter, rste 110 : resets L2 and L3 energy counters.
@@ -1440,6 +1493,17 @@ void process_command()
       PrintCurrentTime();
     }
      
+  }
+  // CPL line test
+  else if (!(strcmp(receivedChars , "lnt")))
+  {
+    DebugPrint(F("starting CPL Line test."),0);
+    //pinMode(22,OUTPUT);
+    //digitalWrite(22,HIGH);
+    CPL_line_test(30);
+    //digitalWrite(22,LOW);
+    DebugPrint(F("end CPL Line test."),0);
+    
   }
   else
   {
@@ -1510,8 +1574,14 @@ void loop() {
         addr++;
         epochMillis = ModbusRTUServer.holdingRegisterRead(addr);
         memcpy(&epochSeconds,epochSecondsRegisters,sizeof(epochSeconds));
-        sync_time = epochSeconds + 1;
+        epochSeconds += sync_offset;
+        sync_time = (unsigned long) epochSeconds;
         
+        myRTC.setClockMode(false); // use 24h mode 
+        myRTC.setEpoch(sync_time);
+        PrintCurrentTime();
+        
+
         DebugPrint(F("loop: epochregisters:\t"),5);
         
         DebugPrint(String(epochSecondsRegisters[0]),5);
@@ -1527,30 +1597,31 @@ void loop() {
         DebugPrint(F("\t"),5);
         
         DebugPrint(String(epochSecondsRegisters[4]),5);
-        DebugPrint(F("\t"),5);
+        DebugPrint(F("\n"),5);
         
-        DebugPrint(F("loop: epochseconds:\t"),2);
-        Serial.println(long(epochSeconds));
+        DebugPrint(F("loop: epochseconds (1970 based):\t"),0);
+        DebugPrint(String(long(epochSeconds)),0);
+        DebugPrint(F("\n"),0);
         
         
         DebugPrint(F("loop: year month day hour minute second d:\t"),1);
 
-        DebugPrint(String(year(time)),1);
+        DebugPrint(String(year(sync_time)),1);
         DebugPrint(F("\t"),1);
 
-        DebugPrint(String(month(time)),1);
+        DebugPrint(String(month(sync_time)),1);
         DebugPrint(F("\t"),1);
 
-        DebugPrint(String(day(time)),1);     
+        DebugPrint(String(day(sync_time)),1);     
         DebugPrint(F("\t"),1);
 
-        DebugPrint(String(hour(time)),1);
+        DebugPrint(String(hour(sync_time)),1);
         DebugPrint(F("\t"),1);
 
-        DebugPrint(String(minute(time)),1);
+        DebugPrint(String(minute(sync_time)),1);
         DebugPrint(F("\t"),1);
 
-        DebugPrint(String(second(time)),1);
+        DebugPrint(String(second(sync_time)),1);
         DebugPrint(F("\n"),1);
 
         DebugPrint(F("loop: Enabling Moving Averages Timer"),1);
@@ -1573,6 +1644,7 @@ void loop() {
   }
 
   FillNowValuesAndRegisters();
+  FillAverageValuesRegisters();
   ProcessFormulas();
   PrintNowValues(2);
   
