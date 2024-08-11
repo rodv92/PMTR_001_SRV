@@ -11,6 +11,7 @@
 #include <DS3231.h>
 #include <time.h>
 
+
 // To be included only in main(), .ino with setup() to avoid `Multiple Definitions` Linker Error
 #define USE_TIMER_1     false
 #define USE_TIMER_2     false
@@ -44,18 +45,18 @@ uint16_t sync_offset = 6;
 bool linetest = false;
 const uint16_t timeoutSyncMillis = 20000;
 const int ledPin = LED_BUILTIN;
-uint16_t VoltageModbusRegister[2] = {0};
-uint16_t CurrentModbusRegister[2] = {0};
-uint16_t PowerModbusRegister[2] = {0};
-uint16_t EnergyModbusRegister[2] = {0};
-uint16_t FrequencyModbusRegister[2] = {0};
-uint16_t PowerFactorModbusRegister[2] = {0};
+uint16_t VoltageModbusRegister = 0;
+uint16_t CurrentModbusRegister = 0;
+uint16_t PowerModbusRegister = 0;
+uint16_t EnergyModbusRegister = 0;
+uint16_t FrequencyModbusRegister = 0;
+uint16_t PowerFactorModbusRegister = 0;
 
-uint16_t AvgVoltageModbusRegister[2] = {0};
-uint16_t AvgCurrentModbusRegister[2] = {0};
-uint16_t AvgPowerModbusRegister[2] = {0};
-uint16_t AvgFrequencyModbusRegister[2] = {0};
-uint16_t AvgPowerFactorModbusRegister[2] = {0};
+uint16_t AvgVoltageModbusRegister = 0;
+uint16_t AvgCurrentModbusRegister = 0;
+uint16_t AvgPowerModbusRegister = 0;
+uint16_t AvgFrequencyModbusRegister = 0;
+uint16_t AvgPowerFactorModbusRegister = 0;
 
 const uint16_t sampling_intervals_millis = 1000; // period of PZEM sampling by the ISR
 const uint8_t nbvalues = 20; // number of PZEM samples to retain in memory.
@@ -71,12 +72,12 @@ struct MovingAveragesStruct
 };
 */
 
-double NowValues[18]; // contains most recent values read from PZEM. used as storage since PZEM cannot be queried inside ISR because it uses Serial.
+uint16_t NowValues[18]; // contains most recent values read from PZEM. used as storage since PZEM cannot be queried inside ISR because it uses Serial.
 
 struct MovingAveragesStructV2
 {
   uint8_t WindowLength;
-  double MovingAverageValues[15];
+  uint16_t MovingAverageValues[15];
 
 };
 
@@ -97,7 +98,7 @@ struct CircularBufferValuesStruct
 {
   uint8_t FillNbValues; // used during ring buffer initial fill, capped at nbvalues. used for moving average initialization
   uint8_t NextWriteIndex; // index for next write;
-  double PZEMValues[nbvalues][15]; //struct storing values history for each metric except energy
+  uint16_t PZEMValues[nbvalues][15]; //struct storing values history for each metric except energy
 };
 
 // total history buffer window in seconds = sampling_interval_millis * nbvalues; typically 60 seconds (60 values with ISR firing each second)
@@ -167,14 +168,14 @@ const int numHoldingRegisters = 109;
 
 const int numInputRegisters = 2;
 
-void DebugPrint(String DebugStr, uint8_t myDebugLevel)
+inline void DebugPrint(String DebugStr, uint8_t myDebugLevel)
 {
   if (myDebugLevel <= DebugLevel)
   {Serial.print(DebugStr);
   Serial.flush();}
 }
 
-void DebugPrint(uint8_t DebugNum, uint8_t myDebugLevel)
+inline void DebugPrint(uint8_t DebugNum, uint8_t myDebugLevel)
 {
   if (myDebugLevel <= DebugLevel)
   {Serial.print(DebugNum);
@@ -254,7 +255,7 @@ void TimerHandler()
 
 
 
-void EvalLogicalExpression(uint8_t MAWindowSeconds, char Expression[64], double &result)
+void EvalLogicalExpression(uint8_t MAWindowSeconds, char Expression[64], float &result)
 {
 
   uint8_t indexptr;
@@ -287,51 +288,51 @@ void EvalLogicalExpression(uint8_t MAWindowSeconds, char Expression[64], double 
   
   // voltage
   struct expr_var *L1U = expr_var(&vars, "L1U", 3);
-  L1U->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[0];
+  L1U->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[0]);
   struct expr_var *L2U = expr_var(&vars, "L2U", 3);
-  L2U->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[5];
+  L2U->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[1]);
   struct expr_var *L3U = expr_var(&vars, "L3U", 3);
-  L3U->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[10];
+  L3U->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[2]);
 
   // current
   struct expr_var *L1I = expr_var(&vars, "L1I", 3);
-  L1I->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[1];
+  L1I->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[3]);
   struct expr_var *L2I = expr_var(&vars, "L2I", 3);
-  L2I->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[6];
+  L2I->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[4]);
   struct expr_var *L3I = expr_var(&vars, "L3I", 3);
-  L3I->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[11];
+  L3I->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[5]);
 
   // power
   struct expr_var *L1P = expr_var(&vars, "L1P", 3);
-  L1P->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[2];
+  L1P->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[6]);
   struct expr_var *L2P = expr_var(&vars, "L2P", 3);
-  L2P->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[7];
+  L2P->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[7]);
   struct expr_var *L3P = expr_var(&vars, "L3P", 3);
-  L3P->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[12];
+  L3P->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[8]);
 
   // energy. always use NowValues
   struct expr_var *L1e = expr_var(&vars, "L1e", 3);
-  L1e->value = NowValues[5];
+  L1e->value = static_cast <float> (NowValues[15]);
   struct expr_var *L2e = expr_var(&vars, "L2e", 3);
-  L2e->value = NowValues[11];
+  L2e->value = static_cast <float> (NowValues[16]);
   struct expr_var *L3e = expr_var(&vars, "L3e", 3);
-  L3e->value = NowValues[17];
+  L3e->value = static_cast <float> (NowValues[17]);
 
   // frequency
   struct expr_var *L1f = expr_var(&vars, "L1f", 3);
-  L1f->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[3];
+  L1f->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[9]);
   struct expr_var *L2f = expr_var(&vars, "L2f", 3);
-  L2f->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[8];
+  L2f->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[10]);
   struct expr_var *L3f = expr_var(&vars, "L3f", 3);
-  L3f->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[13];
+  L3f->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[11]);
 
   // power factor
   struct expr_var *L1pf = expr_var(&vars, "L1pf", 4);
-  L1pf->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[4];
+  L1pf->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[12]);
   struct expr_var *L2pf = expr_var(&vars, "L2pf", 4);
-  L2pf->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[9];
+  L2pf->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[13]);
   struct expr_var *L3pf = expr_var(&vars, "L3pf", 4);
-  L3pf->value = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[14];
+  L3pf->value = static_cast <float> (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[14]);
 
 
   //Serial.println(a->value);
@@ -366,42 +367,50 @@ void EvalLogicalExpression(uint8_t MAWindowSeconds, char Expression[64], double 
 }
 
 
-
-
-
 void FillAverageValuesRegisters()
 {
 
-    long ret;
-
+    int32_t ret;
+    
     for(uint8_t i=0;i<3;i++)
     {
-
+      /*
       memcpy(AvgVoltageModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[0 + i]), sizeof(AvgVoltageModbusRegister));
       memcpy(AvgCurrentModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[3 + i]), sizeof(AvgVoltageModbusRegister));
       memcpy(AvgPowerModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[6 + i]), sizeof(AvgVoltageModbusRegister));
       memcpy(AvgFrequencyModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[9 + i]), sizeof(AvgVoltageModbusRegister));
       memcpy(AvgPowerFactorModbusRegister, &(myMovingAveragesStructV2_0.MovingAverageValues[12 + i]), sizeof(AvgVoltageModbusRegister));
-    
+      */
+
       //U Avg
-      ret = ModbusRTUServer.holdingRegisterWrite(116 + 2*i,AvgVoltageModbusRegister[0]);
-      ret = ModbusRTUServer.holdingRegisterWrite(117 + 2*i,AvgVoltageModbusRegister[1]);
+      ret = ModbusRTUServer.holdingRegisterWrite(116 + 2*i,myMovingAveragesStructV2_0.MovingAverageValues[0 + i]);
+      
+      //ret = ModbusRTUServer.holdingRegisterWrite(116 + 2*i,AvgVoltageModbusRegister[0]);
+      //ret = ModbusRTUServer.holdingRegisterWrite(117 + 2*i,AvgVoltageModbusRegister[1]);
       
       //I Avg
-      ret = ModbusRTUServer.holdingRegisterWrite(122 + 2*i,AvgCurrentModbusRegister[0]);
-      ret = ModbusRTUServer.holdingRegisterWrite(123 + 2*i,AvgCurrentModbusRegister[1]);
+      ret = ModbusRTUServer.holdingRegisterWrite(122 + 2*i,myMovingAveragesStructV2_0.MovingAverageValues[3 + i]);
+      
+      //ret = ModbusRTUServer.holdingRegisterWrite(122 + 2*i,AvgCurrentModbusRegister[0]);
+      //ret = ModbusRTUServer.holdingRegisterWrite(123 + 2*i,AvgCurrentModbusRegister[1]);
     
       //P Avg
-      ret = ModbusRTUServer.holdingRegisterWrite(128 + 2*i,AvgPowerModbusRegister[0]);
-      ret = ModbusRTUServer.holdingRegisterWrite(129 + 2*i,AvgPowerModbusRegister[1]);
+      ret = ModbusRTUServer.holdingRegisterWrite(128 + 2*i,myMovingAveragesStructV2_0.MovingAverageValues[6 + i]);
+      
+      //ret = ModbusRTUServer.holdingRegisterWrite(128 + 2*i,AvgPowerModbusRegister[0]);
+      //ret = ModbusRTUServer.holdingRegisterWrite(129 + 2*i,AvgPowerModbusRegister[1]);
       
       //f Avg
-      ret = ModbusRTUServer.holdingRegisterWrite(134 + 2*i,AvgFrequencyModbusRegister[0]);
-      ret = ModbusRTUServer.holdingRegisterWrite(135 + 2*i,AvgFrequencyModbusRegister[1]);
+      ret = ModbusRTUServer.holdingRegisterWrite(134 + 2*i,myMovingAveragesStructV2_0.MovingAverageValues[9 + i]);
+      
+      //ret = ModbusRTUServer.holdingRegisterWrite(134 + 2*i,AvgFrequencyModbusRegister[0]);
+      //ret = ModbusRTUServer.holdingRegisterWrite(135 + 2*i,AvgFrequencyModbusRegister[1]);
         
       //pf Avg
-      ret = ModbusRTUServer.holdingRegisterWrite(140 + 2*i,AvgPowerFactorModbusRegister[0]);
-      ret = ModbusRTUServer.holdingRegisterWrite(141 + 2*i,AvgPowerFactorModbusRegister[1]);
+      ret = ModbusRTUServer.holdingRegisterWrite(140 + 2*i,myMovingAveragesStructV2_0.MovingAverageValues[12 + i]);
+      
+      //ret = ModbusRTUServer.holdingRegisterWrite(140 + 2*i,AvgPowerFactorModbusRegister[0]);
+      //ret = ModbusRTUServer.holdingRegisterWrite(141 + 2*i,AvgPowerFactorModbusRegister[1]);
       
     }
 
@@ -486,7 +495,7 @@ void ComputeMovingAveragesV2Handler()
       MovingAveragesStructV2ptr[indexptr]->WindowLength = 0;
       for (uint8_t indextype = 0; indextype < 15; indextype++)
       {
-        MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = 0.0;
+        MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = 0;
       }
       DebugPrint(F("ComputeMovingAveragesV2Handler: FREED!: indexptr\t"),6);
       DebugPrint(String(indexptr),6);
@@ -733,11 +742,7 @@ void SelectPZEM(uint8_t PZEMID)
 void SelectPZEM_v2(uint8_t PZEMID)
 {
 
-  pinMode(ADG333A_IN1_PIN,OUTPUT);
-  pinMode(ADG333A_IN2_PIN,OUTPUT);
-  pinMode(ADG333A_IN3_PIN,OUTPUT);
-  pinMode(ADG333A_IN4_PIN,OUTPUT);
-
+  ISR_timer.disable(MovingAveragesTimerNumber);
 
   switch (PZEMID)
   {
@@ -771,6 +776,9 @@ void SelectPZEM_v2(uint8_t PZEMID)
     break;
 
   }
+  
+  ISR_timer.enable(MovingAveragesTimerNumber);
+
 }
 
 void PZEM_resetEnergy(uint8_t PZEMresetflag)
@@ -786,25 +794,102 @@ void PZEM_resetEnergy(uint8_t PZEMresetflag)
   }
 }
 
+uint32_t GetProcessingDelayMicros()
+{
+  static uint32_t prevMicros = 0;
+  uint32_t ProcessingDelayMicros =  micros() - prevMicros;
+  prevMicros = micros();
+  return ProcessingDelayMicros;
+}
+
+
+uint32_t GetProcessingDelay()
+{
+  static uint32_t prevMillis = 0;
+  uint32_t nowMillis = millis();
+  uint32_t ProcessingDelay =  nowMillis - prevMillis;
+  prevMillis = nowMillis;
+  DebugPrint(String(nowMillis),7);
+  DebugPrint("\t",7);
+  return ProcessingDelay;
+}
+
+
 void FillNowValuesAndRegisters()
 {
 
   long ret = 0;
+  
+  uint32_t ProcessingCompensatedDelayMicros = 0;
+  
+  
+  uint32_t ProcessingCompensatedDelayMillis = 0;
+  uint32_t ProcessingCompensationRemainderDelayMicros = 0;
+
   for (uint8_t i = 0; i < 3; i++)
   {
+    
     DebugPrint(F("FillNowValuesAndRegisters: PZEM:\t"),1);
     DebugPrint(i,1);
     DebugPrint(F("\n"),1);
 
-    SelectPZEM_v2(i);
-    delay(1000);
-    float voltage = pzem.voltage(); 
-    float current = pzem.current();
-    float power = pzem.power();
-    float frequency = pzem.frequency();
-    float pf = pzem.pf();
-    float energy = pzem.energy();
+    /*
+    ProcessingCompensatedDelayMicros = GetProcessingDelayMicros();
+    ldiv_t result = ldiv(ProcessingCompensatedDelayMicros,1000);
+    ProcessingCompensatedDelayMillis = result.quot;
+    ProcessingCompensationRemainderDelayMicros = result.rem;
+    
 
+    DebugPrint(String(i),0);
+    DebugPrint("\t",0);
+    DebugPrint(String(ProcessingCompensatedDelayMicros),0);
+    DebugPrint("\t",0);
+    DebugPrint(String(ProcessingCompensatedDelayMillis),0);
+    DebugPrint("\t",0);
+    DebugPrint(String(ProcessingCompensationRemainderDelayMicros),0);
+    DebugPrint("\n",0);
+    */
+
+    ProcessingCompensatedDelayMillis = GetProcessingDelay();
+    
+    
+    DebugPrint(String(i),7);
+    DebugPrint("\t",7);
+    DebugPrint(String(ProcessingCompensatedDelayMillis),7);
+    DebugPrint("\t",7);
+    
+
+    //delay(333);
+    //delay(333 - constrain(ProcessingCompensatedDelayMillis,0,332) - int(bool(ProcessingCompensatedDelayMicros)));
+    delay(333 - constrain(ProcessingCompensatedDelayMillis,0,333));
+    
+    ProcessingCompensatedDelayMillis = GetProcessingDelay();
+    
+    DebugPrint(String(ProcessingCompensatedDelayMillis),7);
+    DebugPrint("\n",7);
+    
+    SelectPZEM_v2(i);
+    
+    
+    uint16_t voltage = static_cast <uint16_t> (floor(10.f * pzem.voltage())); // value in decivolts, max_value 65535 deciVolts, or 6553.5 Volts 
+    uint16_t current = static_cast <uint16_t> (floor(100.f * pzem.current())); // value in centiAmperes, max value 65535 deciAmperes, or 655.35 Amperes
+    uint16_t power = static_cast <uint16_t> (floor(pzem.power())); // value in W, max value 65535 W. note we reduce resolution from 0.1W to 1W in order to store on 16 bits
+    // TODO : add power_decimal support to store residual of power (so we don't lose resolution from 0.1W to 1W) or add another uint16_t and econde over two uint16_t.
+    uint16_t frequency = static_cast <uint16_t> (floor(10.f * pzem.frequency())); //  value in deciHertz, max value 65535 deciHertz, or 6553.5 Hertz
+    uint16_t pf = static_cast <uint16_t> (floor(100.f * pzem.pf())); // value pf*100. pf = 1.0 -> 100.
+    uint16_t energy = static_cast <uint16_t> (floor(10.f * pzem.energy())); // value in hectoWh. max value = 65536 hWh = 6553.5 kWh
+
+    // TODO : overflow management. (like boost narrow-cast) or using pow(2,sizeof(uint_16t)*8) and <template>
+    // TODO : overflow flags for each metric
+    // TODO : store overflow residual in case of energy reset initiated locally due to uint16_t energy overflow.
+    //      : will be grabbed by backend to restore proper energy counter value, and residual will be cleared at this time. 
+    // TODO : other metrics should never overflow, as they are above hardware electrical upper limits of PZEM 004t v3.0
+
+    // NOTE :
+    // values above do not take into account PZEM limitations (inherent to current/voltage sensing admissible values and PZEM internal data types limitations, which may be substnatially lower than the theoretical values above)
+    // check PZEM datasheet to know more.
+
+    // TODO : isochronous sampling. compensate processing delay and remove it from PZEM polling delay.
      
 
     if(!isnan(voltage)){
@@ -812,14 +897,15 @@ void FillNowValuesAndRegisters()
         NowValues[0 + i] = voltage;
     } else {
         //Serial.println("Error reading voltage");
-        NowValues[0 + i] = 0.0;
-
+        NowValues[0 + i] = 0;
         Anyerror = true;
     }
-    memcpy(VoltageModbusRegister, &(NowValues[0 + i]), sizeof(VoltageModbusRegister));
+    //memcpy(VoltageModbusRegister, &(NowValues[0 + i]), sizeof(VoltageModbusRegister));
 
-    ret = ModbusRTUServer.holdingRegisterWrite(80 + 2*i,VoltageModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(81 + 2*i,VoltageModbusRegister[1]);
+    ret = ModbusRTUServer.holdingRegisterWrite(80 + 2*i,NowValues[0 + i]);
+    
+    //ret = ModbusRTUServer.holdingRegisterWrite(80 + 2*i,VoltageModbusRegister[0]);
+    //ret = ModbusRTUServer.holdingRegisterWrite(81 + 2*i,VoltageModbusRegister[1]);
 
       
     //NowValues[3] = pzem.current();
@@ -829,13 +915,15 @@ void FillNowValuesAndRegisters()
         
     } else {
         //Serial.println("Error reading current");
-        NowValues[3 + i] = 0.0;
+        NowValues[3 + i] = 0;
         Anyerror = true;
     }
-    memcpy(CurrentModbusRegister, &(NowValues[3 + i]), sizeof(CurrentModbusRegister));
+    //memcpy(CurrentModbusRegister, &(NowValues[3 + i]), sizeof(CurrentModbusRegister));
 
-    ret = ModbusRTUServer.holdingRegisterWrite(86 + 2*i,CurrentModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(87 + 2*i,CurrentModbusRegister[1]);
+    ret = ModbusRTUServer.holdingRegisterWrite(86 + 2*i,NowValues[3 + i]);
+
+    //ret = ModbusRTUServer.holdingRegisterWrite(86 + 2*i,CurrentModbusRegister[0]);
+    //ret = ModbusRTUServer.holdingRegisterWrite(87 + 2*i,CurrentModbusRegister[1]);
 
 
 
@@ -846,13 +934,15 @@ void FillNowValuesAndRegisters()
     
     } else {
         //Serial.println("Error reading power");
-        NowValues[6 + i] = 0.0;
+        NowValues[6 + i] = 0;
         Anyerror = true;
     }
-    memcpy(PowerModbusRegister, &(NowValues[6 + i]), sizeof(PowerModbusRegister));
+    //memcpy(PowerModbusRegister, &(NowValues[6 + i]), sizeof(PowerModbusRegister));
 
-    ret = ModbusRTUServer.holdingRegisterWrite(92 + 2*i,PowerModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(93 + 2*i,PowerModbusRegister[1]);  
+    ret = ModbusRTUServer.holdingRegisterWrite(92 + 2*i,NowValues[6 +i]);
+    
+    //ret = ModbusRTUServer.holdingRegisterWrite(92 + 2*i,PowerModbusRegister[0]);
+    //ret = ModbusRTUServer.holdingRegisterWrite(93 + 2*i,PowerModbusRegister[1]);  
   
 
     //NowValues[9] = pzem.frequency();
@@ -862,13 +952,15 @@ void FillNowValuesAndRegisters()
     
     } else {
         //Serial.println("Error reading frequency");
-        NowValues[9 + i] = 0.0;
+        NowValues[9 + i] = 0;
         Anyerror = true;
     }
-    memcpy(FrequencyModbusRegister, &(NowValues[9 + i]), sizeof(FrequencyModbusRegister));
+    //memcpy(FrequencyModbusRegister, &(NowValues[9 + i]), sizeof(FrequencyModbusRegister));
 
-    ret = ModbusRTUServer.holdingRegisterWrite(104 + 2*i,FrequencyModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(105 + 2*i,FrequencyModbusRegister[1]);
+    ret = ModbusRTUServer.holdingRegisterWrite(104 + 2*i,NowValues[9 + i]);
+
+    //ret = ModbusRTUServer.holdingRegisterWrite(104 + 2*i,FrequencyModbusRegister[0]);
+    //ret = ModbusRTUServer.holdingRegisterWrite(105 + 2*i,FrequencyModbusRegister[1]);
    
 
     //NowValues[12] = pzem.pf();
@@ -877,13 +969,15 @@ void FillNowValuesAndRegisters()
         NowValues[12 + i] = pf;
     } else {
         //Serial.println("Error reading power factor");
-        NowValues[12 + i] = 0.0;
+        NowValues[12 + i] = 0;
         Anyerror = true;
     }
-    memcpy(PowerFactorModbusRegister, &(NowValues[12 + i]), sizeof(PowerFactorModbusRegister));
-
-    ret = ModbusRTUServer.holdingRegisterWrite(110 + 2*i,PowerFactorModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(111 + 2*i,PowerFactorModbusRegister[1]);
+    //memcpy(PowerFactorModbusRegister, &(NowValues[12 + i]), sizeof(PowerFactorModbusRegister));
+    
+    ret = ModbusRTUServer.holdingRegisterWrite(110 + 2*i,NowValues[12 + i]);
+    
+    //ret = ModbusRTUServer.holdingRegisterWrite(110 + 2*i,PowerFactorModbusRegister[0]);
+    //ret = ModbusRTUServer.holdingRegisterWrite(111 + 2*i,PowerFactorModbusRegister[1]);
 
 
     //NowValues[15] = pzem.energy();
@@ -892,13 +986,15 @@ void FillNowValuesAndRegisters()
         NowValues[15 + i] = energy;  
     } else {
         //Serial.println("Error reading energy");
-        NowValues[15 + i] = 0.0;
+        NowValues[15 + i] = 0;
         Anyerror = true;
     }
-    memcpy(EnergyModbusRegister, &(NowValues[15 + i]), sizeof(EnergyModbusRegister));
+    //memcpy(EnergyModbusRegister, &(NowValues[15 + i]), sizeof(EnergyModbusRegister));
 
-    ret = ModbusRTUServer.holdingRegisterWrite(98 + 2*i,EnergyModbusRegister[0]);
-    ret = ModbusRTUServer.holdingRegisterWrite(99 + 2*i,EnergyModbusRegister[1]);
+    ret = ModbusRTUServer.holdingRegisterWrite(98 + 2*i,NowValues[15 + i]);
+    
+    //ret = ModbusRTUServer.holdingRegisterWrite(98 + 2*i,EnergyModbusRegister[0]);
+    //ret = ModbusRTUServer.holdingRegisterWrite(99 + 2*i,EnergyModbusRegister[1]);
     
   }
     
@@ -1066,7 +1162,7 @@ void ProcessFormulas()
     
     if(TripFormulaDataStructptr[indexptr]->MAWindowSeconds != 0)
     {
-      double result;
+      float result;
       bool bool_result;
       DebugPrint(F("ProcessFormulas: THIS FORMULA SLOT IS USED\n"),5);
       
@@ -1154,9 +1250,16 @@ void CPL_line_test(uint8_t test_seconds)
 void setup() 
 {
   
-  Serial.begin(9600);
+  Serial.begin(57600);
   Serial1.begin(9600);
   Wire.begin();
+  
+  pinMode(ADG333A_IN1_PIN,OUTPUT);
+  pinMode(ADG333A_IN2_PIN,OUTPUT);
+  pinMode(ADG333A_IN3_PIN,OUTPUT);
+  pinMode(ADG333A_IN4_PIN,OUTPUT);
+
+  
   delay(1000);
   DebugPrint(F("setup: Modbus RTU Server Init\n"),0);
   
@@ -1514,9 +1617,14 @@ void process_command()
 }
 
 
-void loop() {
+void loop() 
+{
+
+  // DEBUG DELAY COMPENSATION
+  //ISR_timer.disable(MovingAveragesTimerNumber);
+    
   
-  delay(1000);
+  //delay(1000);
 
   // poll for serial command
   recvWithEndMarker(':');
@@ -1531,7 +1639,8 @@ void loop() {
   // poll for Modbus RTU requests
   static uint32_t millisAtSyncedEpoch;
   static uint64_t epochSeconds;
-  static uint16_t epochMillis; 
+  static uint16_t epochMillis;
+
   ModbusRTUServer.poll();
   //delay(100);
   //Serial.println(millis());
