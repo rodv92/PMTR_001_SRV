@@ -25,6 +25,9 @@
 
 uint8_t DebugLevel = 0;
 bool Anyerror = false;
+uint8_t maxPZEMRetries = 3;
+uint16_t PZEMRetries = 0;
+uint16_t PZEMReads = 0;
 uint8_t DeviceAddress;
 
 
@@ -77,7 +80,7 @@ uint16_t NowValues[18]; // contains most recent values read from PZEM. used as s
 struct MovingAveragesStructV2
 {
   uint8_t WindowLength;
-  uint16_t MovingAverageValues[15];
+  uint32_t MovingAverageValues[15];
 
 };
 
@@ -196,7 +199,6 @@ void recvWithEndMarker(char endChar)
     while (Serial.available() > 0 && newData == false) {
       rc = Serial.read();
       //delay(10);
-      Serial.println(rc);
       if (rc != endChar) {
         receivedChars[ndx] = rc;
         ndx++;
@@ -205,7 +207,6 @@ void recvWithEndMarker(char endChar)
         }
       }
       else {
-        Serial.println("endmarker");
         receivedChars[ndx] = '\0'; // terminate the string
         ndx = 0;
         newData = true;
@@ -431,15 +432,26 @@ void WriteCircularBufferValues()
     DebugPrint(String(myCircularBufferValuesStruct.NextWriteIndex),6);
     DebugPrint(F("\n"),6);
 
-  
-    myCircularBufferValuesStruct.PZEMValues[myCircularBufferValuesStruct.NextWriteIndex][IndexType] = NowValues[IndexType];
+    // QUICK FIX for the MA not to be impacted by PZEM NaN (error querying the PZEM, despite retries)
+    // in this case NowValues[IndexType] is 0. We can not add such a value to the Circular Buffer, or MA will decrease.
+    // a decrease in MA could be interpreted as a voltage sag, which is not necessarily the case
+    // so we propagate the previous circular buffer sample to NextWriteIndex
+    // TODO : handle the case where the PZEM is not connected to L/N or L/L, does it report NaN ?
+    // TODO : add a failure flag to inform that the MA is not to be trusted, when too many samples are 0 from a NaN event, since NaN cannot be pushed to unsigned int.
+
+    if (NowValues[IndexType] != 0)
+    {
+        myCircularBufferValuesStruct.PZEMValues[myCircularBufferValuesStruct.NextWriteIndex][IndexType] = NowValues[IndexType];
+    }
+    else
+    {
+        myCircularBufferValuesStruct.PZEMValues[myCircularBufferValuesStruct.NextWriteIndex][IndexType] = myCircularBufferValuesStruct.PZEMValues[(myCircularBufferValuesStruct.NextWriteIndex - 1 + nbvalues) % nbvalues][IndexType];
+    }
 
   }
 
 
   DebugPrint(F("WriteCircularBufferValues: END\n\n"),6);
-  
-
   DebugPrint(F("WriteCircularBufferValues: UPDATE INDEXES\n"),6);
   
   myCircularBufferValuesStruct.NextWriteIndex++;  
@@ -452,8 +464,6 @@ void WriteCircularBufferValues()
   DebugPrint(F("\t"),6);
   DebugPrint(String(myCircularBufferValuesStruct.FillNbValues),6);
   DebugPrint(F("\n"),6);
-
-
 
 }
 
@@ -567,8 +577,8 @@ void ComputeMovingAveragesV2Handler()
               DebugPrint(String(SampleToAddIndex),6);
               DebugPrint(F("\n"),6);
               
-
-              MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] + (myCircularBufferValuesStruct.PZEMValues[SampleToAddIndex][indextype] - myCircularBufferValuesStruct.PZEMValues[OldestSampleToDropIndex][indextype])/WindowLengths[indexWindows];
+              MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = static_cast <uint16_t> (floor(0.5f + MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] + ( (float) myCircularBufferValuesStruct.PZEMValues[SampleToAddIndex][indextype] - (float) myCircularBufferValuesStruct.PZEMValues[OldestSampleToDropIndex][indextype]) / (float) WindowLengths[indexWindows]));
+              
           }
 
 
@@ -593,7 +603,7 @@ void ComputeMovingAveragesV2Handler()
 
 
               // update using cumulative average update formula
-              MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype]*(myCircularBufferValuesStruct.FillNbValues -1) + myCircularBufferValuesStruct.PZEMValues[myCircularBufferValuesStruct.FillNbValues - 1][indextype])/myCircularBufferValuesStruct.FillNbValues;
+              MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype]*(myCircularBufferValuesStruct.FillNbValues -1) + myCircularBufferValuesStruct.PZEMValues[myCircularBufferValuesStruct.FillNbValues - 1][indextype]) / myCircularBufferValuesStruct.FillNbValues;
           }
         }
 
@@ -742,8 +752,8 @@ void SelectPZEM(uint8_t PZEMID)
 void SelectPZEM_v2(uint8_t PZEMID)
 {
 
-  ISR_timer.disable(MovingAveragesTimerNumber);
-
+  //ISR_timer.disable(MovingAveragesTimerNumber);
+  
   switch (PZEMID)
   {
     case 0:
@@ -777,7 +787,7 @@ void SelectPZEM_v2(uint8_t PZEMID)
 
   }
   
-  ISR_timer.enable(MovingAveragesTimerNumber);
+  //ISR_timer.enable(MovingAveragesTimerNumber);
 
 }
 
@@ -859,9 +869,9 @@ void FillNowValuesAndRegisters()
     DebugPrint("\t",7);
     
 
-    //delay(333);
+    delay(333);
     //delay(333 - constrain(ProcessingCompensatedDelayMillis,0,332) - int(bool(ProcessingCompensatedDelayMicros)));
-    delay(333 - constrain(ProcessingCompensatedDelayMillis,0,333));
+    //delay(333 - constrain(ProcessingCompensatedDelayMillis,0,333));
     
     ProcessingCompensatedDelayMillis = GetProcessingDelay();
     
@@ -870,14 +880,83 @@ void FillNowValuesAndRegisters()
     
     SelectPZEM_v2(i);
     
+    float tmpval = 0.f;
+
+    uint16_t voltage = 0;
+    uint16_t current = 0;
+    uint16_t power = 0;
+    uint16_t frequency = 0;
+    uint16_t pf = 0;
+    uint16_t energy = 0;
+
+    for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
+    {
+      tmpval = pzem.voltage();
+      PZEMReads++;
+      if(isnan(tmpval)) {PZEMRetries++; continue;}
+      voltage = static_cast <uint16_t> (floor(10.f * tmpval)); // value in decivolts, max_value 65535 deciVolts, or 6553.5 Volts 
+      break;
+    }
+
+    if (isnan(tmpval)) {voltage = 0;} // NaN despite retries.
+
+    for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
+    {
+      tmpval = pzem.current();
+      PZEMReads++;
+      if(isnan(tmpval)) {PZEMRetries++; continue;}
+      current = static_cast <uint16_t> (floor(100.f * tmpval)); // value in centiAmperes, max value 65535 deciAmperes, or 655.35 Amperes
+      break;
+    }
+
+    if (isnan(tmpval)) {current = 0;} // NaN despite retries.
+
+    for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
+    {
+      tmpval = pzem.power();
+      PZEMReads++;
+      if(isnan(tmpval)) {PZEMRetries++; continue;}
+      power = static_cast <uint16_t> (floor(tmpval)); // value in W, max value 65535 W. note we reduce resolution from 0.1W to 1W in order to store on 16 bits
+      // TODO : add power_decimal support to store residual of power (so we don't lose resolution from 0.1W to 1W) or add another uint16_t and econde over two uint16_t.
+      break;
+    }
+
+    if (isnan(tmpval)) {power = 0;} // NaN despite retries.
     
-    uint16_t voltage = static_cast <uint16_t> (floor(10.f * pzem.voltage())); // value in decivolts, max_value 65535 deciVolts, or 6553.5 Volts 
-    uint16_t current = static_cast <uint16_t> (floor(100.f * pzem.current())); // value in centiAmperes, max value 65535 deciAmperes, or 655.35 Amperes
-    uint16_t power = static_cast <uint16_t> (floor(pzem.power())); // value in W, max value 65535 W. note we reduce resolution from 0.1W to 1W in order to store on 16 bits
-    // TODO : add power_decimal support to store residual of power (so we don't lose resolution from 0.1W to 1W) or add another uint16_t and econde over two uint16_t.
-    uint16_t frequency = static_cast <uint16_t> (floor(10.f * pzem.frequency())); //  value in deciHertz, max value 65535 deciHertz, or 6553.5 Hertz
-    uint16_t pf = static_cast <uint16_t> (floor(100.f * pzem.pf())); // value pf*100. pf = 1.0 -> 100.
-    uint16_t energy = static_cast <uint16_t> (floor(10.f * pzem.energy())); // value in hectoWh. max value = 65536 hWh = 6553.5 kWh
+    
+    for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
+    {
+      tmpval = pzem.frequency();
+      PZEMReads++;
+      if(isnan(tmpval)) {PZEMRetries++; continue;}
+      frequency = static_cast <uint16_t> (floor(10.f * tmpval)); //  value in deciHertz, max value 65535 deciHertz, or 6553.5 Hertz
+      break;
+    }
+
+    if (isnan(tmpval)) {frequency = 0;} // NaN despite retries.
+    
+    for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
+    {
+      tmpval = pzem.pf();
+      PZEMReads++;
+      if(isnan(tmpval)) {PZEMRetries++; continue;}
+      pf = static_cast <uint16_t> (floor(100.f * tmpval)); // value pf*100. pf = 1.0 -> 100.
+      break;
+    }
+
+    if (isnan(tmpval)) {pf = 0;} // NaN despite retries.
+    
+    for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
+    {
+      tmpval = pzem.energy();
+      PZEMReads++;
+      if(isnan(tmpval)) {PZEMRetries++; continue;}
+      energy = static_cast <uint16_t> (floor(10.f * tmpval)); // value in hectoWh. max value = 65536 hWh = 6553.5 kWh
+      break;
+    }
+
+    if (isnan(tmpval)) {energy = 0;} // NaN despite retries.
+    
 
     // TODO : overflow management. (like boost narrow-cast) or using pow(2,sizeof(uint_16t)*8) and <template>
     // TODO : overflow flags for each metric
@@ -1377,7 +1456,9 @@ if (linetest)
 void PrintNowValues(uint8_t DebugLevel)
 {
 
-  DebugPrint(F("PrintNowValues: PZEM voltage L1 L2 L3:\t"),DebugLevel);
+  DebugPrint(F("***LAST KNOWN PZEM VALUES***\n\n"),DebugLevel);
+
+  DebugPrint(F("PZEM voltage L1 L2 L3:\t"),DebugLevel);
 
   DebugPrint(String(NowValues[0]),DebugLevel);
   DebugPrint(F("\t"),DebugLevel);
@@ -1389,7 +1470,7 @@ void PrintNowValues(uint8_t DebugLevel)
   DebugPrint(F("\n"),DebugLevel);
 
   
-  DebugPrint(F("PrintNowValues: PZEM current L1 L2 L3:\t"),DebugLevel);
+  DebugPrint(F("PZEM current L1 L2 L3:\t"),DebugLevel);
 
   DebugPrint(String(NowValues[3]),DebugLevel);
   DebugPrint(F("\t"),DebugLevel);
@@ -1400,7 +1481,7 @@ void PrintNowValues(uint8_t DebugLevel)
   DebugPrint(String(NowValues[5]),DebugLevel);
   DebugPrint(F("\n"),DebugLevel);
 
-  DebugPrint(F("PrintNowValues: PZEM power L1 L2 L3:\t"),DebugLevel);
+  DebugPrint(F("PZEM power L1 L2 L3:\t"),DebugLevel);
   
   DebugPrint(String(NowValues[6]),DebugLevel);
   DebugPrint(F("\t"),DebugLevel);
@@ -1412,7 +1493,7 @@ void PrintNowValues(uint8_t DebugLevel)
   DebugPrint(F("\n"),DebugLevel);
 
 
-  DebugPrint(F("PrintNowValues: PZEM frequency L1 L2 L3:\t"),DebugLevel);
+  DebugPrint(F("PZEM frequency L1 L2 L3:\t"),DebugLevel);
   
   DebugPrint(String(NowValues[9]),DebugLevel);
   DebugPrint(F("\t"),DebugLevel);
@@ -1423,7 +1504,7 @@ void PrintNowValues(uint8_t DebugLevel)
   DebugPrint(String(NowValues[11]),DebugLevel);
   DebugPrint(F("\n"),DebugLevel);
 
-  DebugPrint(F("PrintNowValues: PZEM power factor L1 L2 L3:\t"),DebugLevel);
+  DebugPrint(F("PZEM power factor L1 L2 L3:\t"),DebugLevel);
   
   DebugPrint(String(NowValues[12]),DebugLevel);
   DebugPrint(F("\t"),DebugLevel);
@@ -1434,7 +1515,7 @@ void PrintNowValues(uint8_t DebugLevel)
   DebugPrint(String(NowValues[14]),DebugLevel);
   DebugPrint(F("\n"),DebugLevel);
 
-  DebugPrint(F("PrintNowValues: PZEM energy L1 L2 L3:\t"),DebugLevel);
+  DebugPrint(F("PZEM energy L1 L2 L3:\t"),DebugLevel);
 
   
   DebugPrint(String(NowValues[15]),DebugLevel);
@@ -1444,6 +1525,18 @@ void PrintNowValues(uint8_t DebugLevel)
   DebugPrint(F("\t"),DebugLevel);
 
   DebugPrint(String(NowValues[17]),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
+
+  
+  DebugPrint(F("\nRetries counter: Retries TotalReads PercentErrorRate\t"),DebugLevel);
+
+  DebugPrint(String(PZEMRetries),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String(PZEMReads),DebugLevel);
+  DebugPrint(F("\t"),DebugLevel);
+
+  DebugPrint(String((float) 100.f*PZEMRetries/PZEMReads),DebugLevel);
   DebugPrint(F("\n"),DebugLevel);
 
 }
@@ -1461,7 +1554,7 @@ void PrintAvgValues(uint8_t DebugLevel)
   DebugPrint(F("\t"),DebugLevel);
 
   DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[2]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
 
 
   
@@ -1474,7 +1567,7 @@ void PrintAvgValues(uint8_t DebugLevel)
   DebugPrint(F("\t"),DebugLevel);
 
   DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[5]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
 
   DebugPrint(F("PrintAvgValues: PZEM power L1 L2 L3:\t"),DebugLevel);
   
@@ -1485,7 +1578,7 @@ void PrintAvgValues(uint8_t DebugLevel)
   DebugPrint(F("\t"),DebugLevel);
 
   DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[8]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
 
 
   DebugPrint(F("PrintAvgValues: PZEM frequency L1 L2 L3:\t"),DebugLevel);
@@ -1497,7 +1590,7 @@ void PrintAvgValues(uint8_t DebugLevel)
   DebugPrint(F("\t"),DebugLevel);
 
   DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[11]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
 
   DebugPrint(F("PrintAvgValues: PZEM power factor L1 L2 L3:\t"),DebugLevel);
   
@@ -1509,12 +1602,25 @@ void PrintAvgValues(uint8_t DebugLevel)
   DebugPrint(F("\t"),DebugLevel);
 
   DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[14]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
 
 }
 
+void DumpCircularBuffer(uint8_t DebugLevel)
+{
+  for(uint8_t indextype = 0; indextype<15; indextype++)
+  {
+    for(uint8_t indexval = 0; indexval<20; indexval++)
+    {
+      DebugPrint(String(myCircularBufferValuesStruct.PZEMValues[indexval][indextype]),DebugLevel);
+      DebugPrint(F("\t"),DebugLevel);
+    }
 
-void PrintCurrentTime()
+      DebugPrint(F("\n"),DebugLevel);
+  }
+}
+
+void PrintCurrentTime(uint8_t DebugLevel)
 {
   DateTime nowtime = RTClib::now();
   time_t epoch = nowtime.unixtime();
@@ -1525,36 +1631,36 @@ void PrintCurrentTime()
   char buffer[64];
   strftime(buffer, 64, "%d %m %Y %H:%M:%S", nowtm);   
   
-  DebugPrint(String(buffer),0);
+  DebugPrint(String(buffer),DebugLevel);
+  DebugPrint("\n",DebugLevel);
+  
+  DebugPrint("epoch (2000 based):\t",DebugLevel);  
+  DebugPrint(String(epoch),DebugLevel);
   DebugPrint("\n",0);
   
-  DebugPrint("epoch (2000 based):\t",5);  
-  DebugPrint(String(epoch),5);
-  DebugPrint("\n",0);
+  DebugPrint("years since 1900:\t",DebugLevel);  
+  DebugPrint(nowtm->tm_year,DebugLevel);
+  DebugPrint("\n",DebugLevel);
   
-  DebugPrint("years since 1900:\t",5);  
-  DebugPrint(nowtm->tm_year,5);
-  DebugPrint("\n",5);
-  
-  DebugPrint("months since january:\t",5);  
-  DebugPrint(nowtm->tm_mon,5);
-  DebugPrint("\n",5);
+  DebugPrint("months since january:\t",DebugLevel);  
+  DebugPrint(nowtm->tm_mon,DebugLevel);
+  DebugPrint("\n",DebugLevel);
 
-  DebugPrint("day of month:\t",5);  
-  DebugPrint(nowtm->tm_mday,5);
-  DebugPrint("\n",5);
+  DebugPrint("day of month:\t",DebugLevel);  
+  DebugPrint(nowtm->tm_mday,DebugLevel);
+  DebugPrint("\n",DebugLevel);
 
-  DebugPrint("hours:\t",5);  
-  DebugPrint(nowtm->tm_hour,5);
-  DebugPrint("\n",5);
+  DebugPrint("hours:\t",DebugLevel);  
+  DebugPrint(nowtm->tm_hour,DebugLevel);
+  DebugPrint("\n",DebugLevel);
 
-  DebugPrint("minutes:\t",5);  
-  DebugPrint(nowtm->tm_min,5);
-  DebugPrint("\n",5);
+  DebugPrint("minutes:\t",DebugLevel);  
+  DebugPrint(nowtm->tm_min,DebugLevel);
+  DebugPrint("\n",DebugLevel);
 
-  DebugPrint("seconds:\t",5);  
-  DebugPrint(nowtm->tm_sec,5);
-  DebugPrint("\n",5); 
+  DebugPrint("seconds:\t",DebugLevel);  
+  DebugPrint(nowtm->tm_sec,DebugLevel);
+  DebugPrint("\n",DebugLevel); 
   
 }
 
@@ -1574,6 +1680,10 @@ void process_command()
     
     PrintAvgValues(0);
   }
+  else if (!(strcmp(receivedChars , "dcb")))
+  {
+    DumpCircularBuffer(0);
+  }
   
   
   // resets PZEM energy counters for the specified phases as a binary flag representation. little endian. 
@@ -1586,14 +1696,14 @@ void process_command()
   }
   else if(strreceivedchars.startsWith("time"))
   {
-    if(strreceivedchars.length() == 4) {PrintCurrentTime();}
+    if(strreceivedchars.length() == 4) {PrintCurrentTime(0);}
     else
     {
       myRTC.setClockMode(false); // use 24h mode
       String strEpoch = strreceivedchars.substring(5);
       time_t epoch = strtoul(strEpoch.c_str(),nullptr,10);
       myRTC.setEpoch(epoch);
-      PrintCurrentTime();
+      PrintCurrentTime(0);
     }
      
   }
@@ -1688,7 +1798,7 @@ void loop()
         
         myRTC.setClockMode(false); // use 24h mode 
         myRTC.setEpoch(sync_time);
-        PrintCurrentTime();
+        PrintCurrentTime(5);
         
 
         DebugPrint(F("loop: epochregisters:\t"),5);
