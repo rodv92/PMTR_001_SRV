@@ -577,7 +577,7 @@ void ComputeMovingAveragesV2Handler()
               DebugPrint(String(SampleToAddIndex),6);
               DebugPrint(F("\n"),6);
               
-              MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = static_cast <uint16_t> (floor(0.5f + MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] + ( (float) myCircularBufferValuesStruct.PZEMValues[SampleToAddIndex][indextype] - (float) myCircularBufferValuesStruct.PZEMValues[OldestSampleToDropIndex][indextype]) / (float) WindowLengths[indexWindows]));
+              MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = static_cast <uint16_t> (floor(MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] + ( (float) myCircularBufferValuesStruct.PZEMValues[SampleToAddIndex][indextype] - (float) myCircularBufferValuesStruct.PZEMValues[OldestSampleToDropIndex][indextype]) / (float) WindowLengths[indexWindows]));
               
           }
 
@@ -916,7 +916,7 @@ void FillNowValuesAndRegisters()
       tmpval = pzem.power();
       PZEMReads++;
       if(isnan(tmpval)) {PZEMRetries++; continue;}
-      power = static_cast <uint16_t> (floor(tmpval)); // value in W, max value 65535 W. note we reduce resolution from 0.1W to 1W in order to store on 16 bits
+      power = static_cast <uint16_t> (floor(0.5f + tmpval)); // value in W, max value 65535 W. note we reduce resolution from 0.1W to 1W in order to store on 16 bits
       // TODO : add power_decimal support to store residual of power (so we don't lose resolution from 0.1W to 1W) or add another uint16_t and econde over two uint16_t.
       break;
     }
@@ -1326,6 +1326,27 @@ void CPL_line_test(uint8_t test_seconds)
   }
 }
 
+long readVcc() 
+{
+ 
+  long result;
+  // Read 1.1V reference against AVcc
+  ADMUX = _BV(REFS0) | _BV(MUX4) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+  delay(2); // Wait for Vref to settle
+  ADCSRA |= _BV(ADSC); // Convert
+  while (bit_is_set(ADCSRA,ADSC));
+  result = ADCL;
+  result |= ADCH<<8;
+  //result = 1126400L / result; // Back-calculate AVcc in mV
+  // after calibration
+
+  result = 1129400L / result; // Back-calculate AVcc in mV
+  result -= 255; 
+  return result;
+
+}
+
+
 void setup() 
 {
   
@@ -1453,79 +1474,109 @@ if (linetest)
 
 }
 
+String FormatIntToDecimal(String value, uint8_t DecimalPlaces)
+{
+    
+    uint8_t len = value.length();
+    int8_t lendiff = len - DecimalPlaces;
+    String formatted;
+    
+    if (lendiff > 0)
+    {
+      formatted.reserve(len + 1);
+      formatted = value.substring(0,len - DecimalPlaces) + "." + value.substring(len - DecimalPlaces);
+    }
+    else
+    {
+      formatted.reserve(2 + abs(lendiff) + len);
+      formatted = "0.";
+      while (lendiff < 0) { formatted.concat("0"); lendiff++;}
+      formatted.concat(value); 
+    }
+    return formatted;
+
+
+}
+
 void PrintNowValues(uint8_t DebugLevel)
 {
 
+  DebugPrint(F("\n"),DebugLevel);
   DebugPrint(F("***LAST KNOWN PZEM VALUES***\n\n"),DebugLevel);
 
   DebugPrint(F("PZEM voltage L1 L2 L3:\t"),DebugLevel);
 
-  DebugPrint(String(NowValues[0]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[0]),1),DebugLevel);
+  DebugPrint(F(" V\t"),DebugLevel);
 
-  DebugPrint(String(NowValues[1]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[1]),1),DebugLevel);
+  DebugPrint(F(" V\t"),DebugLevel);
 
-  DebugPrint(String(NowValues[2]),DebugLevel);
-  DebugPrint(F("\n"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[2]),1),DebugLevel);
+  DebugPrint(F(" V\n"),DebugLevel);
 
   
   DebugPrint(F("PZEM current L1 L2 L3:\t"),DebugLevel);
 
-  DebugPrint(String(NowValues[3]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[3]),2),DebugLevel);
+  DebugPrint(F(" A\t"),DebugLevel);
 
-  DebugPrint(String(NowValues[4]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[4]),2),DebugLevel);
+  DebugPrint(F(" A\t"),DebugLevel);
 
-  DebugPrint(String(NowValues[5]),DebugLevel);
-  DebugPrint(F("\n"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[5]),2),DebugLevel);
+  DebugPrint(F(" A\n"),DebugLevel);
 
   DebugPrint(F("PZEM power L1 L2 L3:\t"),DebugLevel);
   
   DebugPrint(String(NowValues[6]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(F(" W\t"),DebugLevel);
 
   DebugPrint(String(NowValues[7]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(F(" W\t"),DebugLevel);
 
   DebugPrint(String(NowValues[8]),DebugLevel);
-  DebugPrint(F("\n"),DebugLevel);
+  DebugPrint(F(" W\n"),DebugLevel);
 
 
   DebugPrint(F("PZEM frequency L1 L2 L3:\t"),DebugLevel);
   
-  DebugPrint(String(NowValues[9]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[9]),1),DebugLevel);
+  DebugPrint(F(" Hz\t"),DebugLevel);
 
-  DebugPrint(String(NowValues[10]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[10]),1),DebugLevel);
+  DebugPrint(F(" Hz\t"),DebugLevel);
 
-  DebugPrint(String(NowValues[11]),DebugLevel);
-  DebugPrint(F("\n"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[11]),1),DebugLevel);
+  DebugPrint(F(" Hz\n"),DebugLevel);
 
   DebugPrint(F("PZEM power factor L1 L2 L3:\t"),DebugLevel);
   
-  DebugPrint(String(NowValues[12]),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[12]),2),DebugLevel);
   DebugPrint(F("\t"),DebugLevel);
 
-  DebugPrint(String(NowValues[13]),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[13]),2),DebugLevel);
   DebugPrint(F("\t"),DebugLevel);
 
-  DebugPrint(String(NowValues[14]),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[14]),2),DebugLevel);
   DebugPrint(F("\n"),DebugLevel);
 
   DebugPrint(F("PZEM energy L1 L2 L3:\t"),DebugLevel);
 
   
-  DebugPrint(String(NowValues[15]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[15]),1),DebugLevel);
+  DebugPrint(F(" kWh\t"),DebugLevel);
 
-  DebugPrint(String(NowValues[16]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[16]),1),DebugLevel);
+  DebugPrint(F(" kWh\t"),DebugLevel);
 
-  DebugPrint(String(NowValues[17]),DebugLevel);
-  DebugPrint(F("\n"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(NowValues[17]),1),DebugLevel);
+  DebugPrint(F(" kWh\n"),DebugLevel);
+
+  DebugPrint(F("5V BUS Voltage:\t"),DebugLevel);
+
+  DebugPrint(String(readVcc()),DebugLevel);
+  DebugPrint(F(" mV\n"),DebugLevel);
 
   
   DebugPrint(F("\nRetries counter: Retries TotalReads PercentErrorRate\t"),DebugLevel);
@@ -1544,70 +1595,74 @@ void PrintNowValues(uint8_t DebugLevel)
 void PrintAvgValues(uint8_t DebugLevel)
 {
 
-  DebugPrint(F("PrintAvgValues: PZEM voltage L1 L2 L3:\t"),DebugLevel);
+  DebugPrint(F("\n"),DebugLevel);
+  DebugPrint(F("***AVERAGE PZEM VALUES***\n\n"),DebugLevel);
+ 
+  DebugPrint(F("PZEM voltage L1 L2 L3:\t"),DebugLevel);
 
 
-  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[0]),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(myMovingAveragesStructV2_0.MovingAverageValues[0]),1),DebugLevel);
   DebugPrint(F("\t"),DebugLevel);
 
-  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[1]),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(myMovingAveragesStructV2_0.MovingAverageValues[1]),1),DebugLevel);
   DebugPrint(F("\t"),DebugLevel);
 
-  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[2]),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(myMovingAveragesStructV2_0.MovingAverageValues[2]),1),DebugLevel);
   DebugPrint(F("\n"),DebugLevel);
 
 
   
   DebugPrint(F("PrintAvgValues: PZEM current L1 L2 L3:\t"),DebugLevel);
 
-  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[3]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(myMovingAveragesStructV2_0.MovingAverageValues[3]),2),DebugLevel);
+  DebugPrint(F(" A\t"),DebugLevel);
 
-  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[4]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(myMovingAveragesStructV2_0.MovingAverageValues[4]),2),DebugLevel);
+  DebugPrint(F(" A\t"),DebugLevel);
 
-  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[5]),DebugLevel);
-  DebugPrint(F("\n"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(myMovingAveragesStructV2_0.MovingAverageValues[5]),2),DebugLevel);
+  DebugPrint(F(" A\n"),DebugLevel);
 
   DebugPrint(F("PrintAvgValues: PZEM power L1 L2 L3:\t"),DebugLevel);
   
   DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[6]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(F(" W\t"),DebugLevel);
 
   DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[7]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(F(" W\t"),DebugLevel);
 
   DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[8]),DebugLevel);
-  DebugPrint(F("\n"),DebugLevel);
+  DebugPrint(F(" W\n"),DebugLevel);
 
 
   DebugPrint(F("PrintAvgValues: PZEM frequency L1 L2 L3:\t"),DebugLevel);
   
-  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[9]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(myMovingAveragesStructV2_0.MovingAverageValues[9]),1),DebugLevel);
+  DebugPrint(F(" Hz\t"),DebugLevel);
 
-  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[10]),DebugLevel);
-  DebugPrint(F("\t"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(myMovingAveragesStructV2_0.MovingAverageValues[10]),1),DebugLevel);
+  DebugPrint(F(" Hz\t"),DebugLevel);
 
-  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[11]),DebugLevel);
-  DebugPrint(F("\n"),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(myMovingAveragesStructV2_0.MovingAverageValues[11]),1),DebugLevel);
+  DebugPrint(F(" Hz\n"),DebugLevel);
 
   DebugPrint(F("PrintAvgValues: PZEM power factor L1 L2 L3:\t"),DebugLevel);
   
 
-  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[12]),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(myMovingAveragesStructV2_0.MovingAverageValues[12]),2),DebugLevel);
   DebugPrint(F("\t"),DebugLevel);
 
-  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[13]),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(myMovingAveragesStructV2_0.MovingAverageValues[13]),2),DebugLevel);
   DebugPrint(F("\t"),DebugLevel);
 
-  DebugPrint(String(myMovingAveragesStructV2_0.MovingAverageValues[14]),DebugLevel);
+  DebugPrint(FormatIntToDecimal(String(myMovingAveragesStructV2_0.MovingAverageValues[14]),2),DebugLevel);
   DebugPrint(F("\n"),DebugLevel);
 
 }
 
 void DumpCircularBuffer(uint8_t DebugLevel)
 {
+  DebugPrint(F("\n"),DebugLevel);
   for(uint8_t indextype = 0; indextype<15; indextype++)
   {
     for(uint8_t indexval = 0; indexval<20; indexval++)
@@ -1629,8 +1684,9 @@ void PrintCurrentTime(uint8_t DebugLevel)
   struct tm* nowtm = localtime(&epoch);
   
   char buffer[64];
-  strftime(buffer, 64, "%d %m %Y %H:%M:%S", nowtm);   
+  strftime(buffer, 64, "%d %m %Y %H:%M:%S UTC", nowtm);   
   
+  DebugPrint("\n",DebugLevel);
   DebugPrint(String(buffer),DebugLevel);
   DebugPrint("\n",DebugLevel);
   
