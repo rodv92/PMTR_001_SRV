@@ -10,7 +10,7 @@
 #include <Wire.h>
 #include <DS3231.h>
 #include <time.h>
-
+#include <avr/wdt.h>
 
 // To be included only in main(), .ino with setup() to avoid `Multiple Definitions` Linker Error
 #define USE_TIMER_1     false
@@ -174,15 +174,19 @@ const int numInputRegisters = 2;
 inline void DebugPrint(String DebugStr, uint8_t myDebugLevel)
 {
   if (myDebugLevel <= DebugLevel)
-  {Serial.print(DebugStr);
-  Serial.flush();}
+  {
+    Serial.print(DebugStr);
+    Serial.flush();
+  }
 }
 
 inline void DebugPrint(uint8_t DebugNum, uint8_t myDebugLevel)
 {
   if (myDebugLevel <= DebugLevel)
-  {Serial.print(DebugNum);
-  Serial.flush();}
+  {
+    Serial.print(DebugNum);
+    Serial.flush();
+  }
 }
 
 const byte numChars = 40;
@@ -469,6 +473,9 @@ void WriteCircularBufferValues()
 
 void ComputeMovingAveragesV2Handler()
 {
+
+  // Called through ISR Timer. Never leave the code at a DebugLevel >= at the level defined in DebugPrint() calls in this function or inside 
+  //WriteCircularBufferValues while in production, as Serial.print calls are blocking.
 
   // update circular buffer
   DebugPrint(F("ComputeMovingAveragesV2Handler: Call WriteCircularBufferValues() \n\n"),6);
@@ -1350,6 +1357,7 @@ long readVcc()
 void setup() 
 {
   
+  wdt_disable();
   Serial.begin(57600);
   Serial1.begin(9600);
   Wire.begin();
@@ -1471,6 +1479,7 @@ if (linetest)
   DebugPrint(String(MovingAveragesTimerNumber),1);
   DebugPrint(F("\n"),1);
 
+  wdt_enable(WDTO_2S); 
 
 }
 
@@ -1786,6 +1795,9 @@ void process_command()
 void loop() 
 {
 
+  wdt_reset(); //watchdog reset
+
+
   // DEBUG DELAY COMPENSATION
   //ISR_timer.disable(MovingAveragesTimerNumber);
     
@@ -1814,6 +1826,7 @@ void loop()
   //Serial.println(ModbusRTUServer.coilRead(0));
   if(ModbusRTUServer.coilRead(0) == 1)
   {
+    // client just put the unit into time sync mode
     ISR_timer.disable(MovingAveragesTimerNumber);
     uint32_t timeoutStartMillis;
     uint16_t epochSecondsRegisters[4]; // 4 words store the epoch seconds (2038 bug compliant)
@@ -1831,7 +1844,8 @@ void loop()
         DebugPrint(F("\n"),1);
         break;
       }
-
+      
+      wdt_reset();
       ModbusRTUServer.poll();
       uint8_t addr;
       if(ModbusRTUServer.coilRead(0) == 0)
