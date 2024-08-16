@@ -11,7 +11,7 @@
 #include <DS3231.h>
 #include <time.h>
 #include <avr/wdt.h>
-#include <avr/eeprom.h>
+#include <EEPROM.h>
 
 // To be included only in main(), .ino with setup() to avoid `Multiple Definitions` Linker Error
 #define USE_TIMER_1     false
@@ -1368,7 +1368,7 @@ uint16_t GetLastEventAddrFromEEPROM()
 
     for (uint16_t i = 12 ; i < EEPROM.length() ; i+=16) 
     {
-      if (EEPROM.read(i) == MAX_COUNT_8BIT) {return i};
+      if (EEPROM.read(i) == MAX_COUNT_8BIT) {return i;}
     }
     return 0; // returns 0 if no event is logged.
 
@@ -1377,9 +1377,10 @@ uint16_t GetLastEventAddrFromEEPROM()
 int8_t WriteFrameToEEPROM(uint16_t addr, uint8_t frame[16])
 {
   // addr is frame base address (address of first byte of frame)
-  if(((addr%16) != 0) {return -1;} // wrong address. frame addr must be aligned.
+  if ((addr % 16) != 0) {return -1;} // wrong address. frame addr must be aligned.
   if(frame[12] != MAX_COUNT_8BIT) {return -2;} // wrong endMarker data
-  epoch_is_zero[8] = {0,0,0,0,0,0,0,0}; 
+  
+  uint8_t epoch_is_zero[8] = {0,0,0,0,0,0,0,0}; 
   if(!memcmp(frame,epoch_is_zero,sizeof(epoch_is_zero))) {return -3;} // epoch must be > 0.
 
   for(uint16_t i=0; i < 16; i++)
@@ -1387,7 +1388,7 @@ int8_t WriteFrameToEEPROM(uint16_t addr, uint8_t frame[16])
     EEPROM.update(addr + i,frame[i]);
   }
 
-  EEPROM.update((addr - 4 + EEPROM.length)%EEPROM.length,0)); // resets previous last event marker.
+  EEPROM.update((addr - 4 + EEPROM.length()) % EEPROM.length(),0); // resets previous last event marker.
 
 }
 
@@ -1408,16 +1409,16 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
   // EEPROM event log frame is 16 bytes, which means 128 events can be logged
   
   // EEPROM event log frame template
-  uint8_t cells[16] = {0,0,0,0,0,0,0,0,0,0,0,0,MAX_COUNT_8BIT,0,0,0};
+  uint8_t frame[16] = {0,0,0,0,0,0,0,0,0,0,0,0,MAX_COUNT_8BIT,0,0,0};
   
   // byte [0] to [7] : Y2K38 compliant unix epoch
   // byte [8] and [9] : eventcode. byte [8] is eventcode MSB, [9] is LSB.
   // byte [10] and [11] : eventdata. byte [10] is eventdata MSB, [11] is LSB.
   // byte [12] : last event marker. set to 255 if part of the last event frame.
   // byte [13] to [15] : padding bytes set to 0.
-  memcpy(&(cells[0]),epoch,sizeof(epoch));
-  memcpy(&(cells[8]),eventCode,sizeof(eventCode));
-  memcpy(&(cells[8]),eventData,sizeof(eventData));
+  memcpy(&(frame[0]),epoch,sizeof(epoch));
+  memcpy(&(frame[8]),eventCode,sizeof(eventCode));
+  memcpy(&(frame[8]),eventData,sizeof(eventData));
   
   // write strategy : circular logging for wear levelling.
   
@@ -1430,10 +1431,10 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
     writeAddr = 0;
   } 
 
-  int8_t ret = WriteFrameToEEPROM(writeAddr,frame)
+  int8_t ret = WriteFrameToEEPROM(writeAddr,frame);
   if(!ret) 
   {
-    LogEndMarkerAddr = (LogEndMarkerAddr+16)%EEPROM.length()
+    LogEndMarkerAddr = (LogEndMarkerAddr+16)%EEPROM.length();
   } // Write End of log marker if write successful.
 
 }
