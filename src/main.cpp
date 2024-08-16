@@ -30,7 +30,9 @@ uint8_t maxPZEMRetries = 3;
 uint16_t PZEMRetries = 0;
 uint16_t PZEMReads = 0;
 uint8_t DeviceAddress;
-
+uint16_t LogEndMarkerAddr = 0; // eventcode is never written at index 0, so it means that it is uninitialized and we must find
+// it with GetLastEventAddrFromEEPROM(). If it returns 0, it means no events are logged.
+ 
 
 ISR_Timer ISR_timer;
 DS3231 myRTC;
@@ -172,6 +174,48 @@ const int numHoldingRegisters = 109;
 
 const int numInputRegisters = 2;
 
+void(* resetFunc) (void) = 0; 
+
+String GetStringFromId(uint16_t stringId)
+{
+  switch (stringId)
+  {
+    case 0:
+      return String(F("Unit started"));
+    case 1:
+      return String(F("Unit configuration OK"));
+    case 2:
+      return String(F("Initiating reset (from local serial command)"));
+    case 3:
+      return String(F("Initiating reset (from Modbus client)"));
+    case 4:
+      return String(F("Unexpected reset (watchdog initiated,reset pressed, or power loss)"));
+    case 5:
+      return String(F("reset after firmware update"));
+    case 6:
+      return String(F("Pausing unit operation"));
+    case 7:
+      return String(F("Resuming unit operation"));
+    case 8:
+      return String(F("Time synchronization OK"));
+    case 9:
+      return String(F("Time set from local serial command"));
+    case 10:
+      return String(F("Loss of power on all three phases. imminent shutdown"));
+    case 11:
+      return String(F("12V DC Bus low voltage"));
+    case 12:
+      return String(F("12V DC Bus critical low voltage. imminent shutdown"));
+    case 13:
+      return String(F("5V DC Bus low voltage"));
+    case 14:
+      return String(F("5V DC Bus critical low voltage. imminent shutdown"));
+    default:
+      return String(F("Unknown event code"));
+       
+  }
+}
+
 inline void DebugPrint(String DebugStr, uint8_t myDebugLevel)
 {
   if (myDebugLevel <= DebugLevel)
@@ -290,6 +334,14 @@ void EvalLogicalExpression(uint8_t MAWindowSeconds, char Expression[64], float &
     }
 
   }
+  if(indexptr == 5)
+  {
+      // struct not found
+      DebugPrint(F("EvalLogicalExpression: ERR: NO MATCHING STRUCT!\n"),5);
+      return;
+    
+  }
+
   struct expr_var_list vars = {0};
   
   // voltage
@@ -1361,6 +1413,7 @@ void clearEEPROM()
     {
       EEPROM.write(i, 0);
     }
+    LogEndMarkerAddr = EEPROM.length() - 4; // ensures next log write is at base address 0.
 }
 
 uint16_t GetLastEventAddrFromEEPROM()
@@ -1368,7 +1421,10 @@ uint16_t GetLastEventAddrFromEEPROM()
 
     for (uint16_t i = 12 ; i < EEPROM.length() ; i+=16) 
     {
-      if (EEPROM.read(i) == MAX_COUNT_8BIT) {return i;}
+      if (EEPROM.read(i) == MAX_COUNT_8BIT) 
+      {
+        return i;
+      }
     }
     return 0; // returns 0 if no event is logged.
 
@@ -1394,8 +1450,6 @@ int8_t WriteFrameToEEPROM(uint16_t addr, uint8_t frame[16])
 
 void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
 {
-  static uint16_t LogEndMarkerAddr = 0; // eventcode is never written at index 0, so it means that it is uninitialized and we must find
-  // it with GetLastEventAddrFromEEPROM(). If it returns 0, it means no events are logged.
   uint16_t writeAddr = 0; // frame base address we will write to.
 
   if(LogEndMarkerAddr == 0)
@@ -1439,12 +1493,41 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
 
 }
 
+int16_t DumpEventLog()
+{
+
+  if(LogEndMarkerAddr == 0)
+  {
+    LogEndMarkerAddr = GetLastEventAddrFromEEPROM();
+    if(LogEndMarkerAddr == 0) {DebugPrint(F("\nLog is empty.\n"),0);}  
+  }
+  
+  uint16_t baseAddr = (LogEndMarkerAddr + 4) % EEPROM.length();
+  
+  for(uint16_t i=baseAddr;i<baseAddr+EEPROM.length();i+=16)
+  {
+    uint16_t realindex = i % EEPROM.length();
+    uint64_t epoch = 0;
+    uint16_t eventcode = MAX_COUNT_16BIT;
+    uint16_t eventdata = MAX_COUNT_16BIT; 
+    EEPROM.get(realindex,epoch);
+    if(epoch == 0)
+    {
+      if(realindex == baseAddr) {DebugPrint("\nUnexpected empty event at log start!\n",0);return 1;}
+      else {DebugPrint("\n\nEnd of log\n",0);return 0;}
+    }
+    EEPROM.get(realindex += sizeof(epoch),eventcode);
+    EEPROM.get(realindex += sizeof(eventcode),eventdata);  
+    //DebugPrint{}
+  }
+}
+
 
 void setup() 
 {
   
   wdt_disable();
-  logEventToEEPROM(0,0); // Signalling unit start-up
+  logEventToEEPROM(0,0); // logging unit start-up
   Serial.begin(57600);
   Serial1.begin(9600);
   Wire.begin();
@@ -1567,7 +1650,7 @@ if (linetest)
   DebugPrint(F("\n"),1);
 
   wdt_enable(WDTO_2S);
-  logEventToEEPROM(1,0); // Signalling unit Configure OK. 
+  logEventToEEPROM(1,0); // logging unit Configure OK. 
 
 }
 
@@ -1971,9 +2054,6 @@ void loop()
         DebugPrint(F("\t"),5);
         
         DebugPrint(String(epochSecondsRegisters[3]),5);
-        DebugPrint(F("\t"),5);
-        
-        DebugPrint(String(epochSecondsRegisters[4]),5);
         DebugPrint(F("\n"),5);
         
         DebugPrint(F("loop: epochseconds (1970 based):\t"),0);
