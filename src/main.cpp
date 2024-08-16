@@ -11,6 +11,7 @@
 #include <DS3231.h>
 #include <time.h>
 #include <avr/wdt.h>
+#include <avr/eeprom.h>
 
 // To be included only in main(), .ino with setup() to avoid `Multiple Definitions` Linker Error
 #define USE_TIMER_1     false
@@ -1353,11 +1354,96 @@ long readVcc()
 
 }
 
+void clearEEPROM()
+{
+    // usually called by backend or from serial debug to clear all events stored in the EEPROM
+    for (uint16_t i = 0 ; i < EEPROM.length() ; i++) 
+    {
+      EEPROM.write(i, 0);
+    }
+}
+
+uint16_t GetLastEventAddrFromEEPROM()
+{
+
+    for (uint16_t i = 12 ; i < EEPROM.length() ; i+=16) 
+    {
+      if (EEPROM.read(i) == MAX_COUNT_8BIT) {return i};
+    }
+    return 0; // returns 0 if no event is logged.
+
+}
+
+int8_t WriteFrameToEEPROM(uint16_t addr, uint8_t frame[16])
+{
+  // addr is frame base address (address of first byte of frame)
+  if(((addr%16) != 0) {return -1;} // wrong address. frame addr must be aligned.
+  if(frame[12] != MAX_COUNT_8BIT) {return -2;} // wrong endMarker data
+  epoch_is_zero[8] = {0,0,0,0,0,0,0,0}; 
+  if(!memcmp(frame,epoch_is_zero,sizeof(epoch_is_zero))) {return -3;} // epoch must be > 0.
+
+  for(uint16_t i=0; i < 16; i++)
+  {
+    EEPROM.update(addr + i,frame[i]);
+  }
+
+  EEPROM.update((addr - 4 + EEPROM.length)%EEPROM.length,0)); // resets previous last event marker.
+
+}
+
+void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
+{
+  static uint16_t LogEndMarkerAddr = 0; // eventcode is never written at index 0, so it means that it is uninitialized and we must find
+  // it with GetLastEventAddrFromEEPROM(). If it returns 0, it means no events are logged.
+  uint16_t writeAddr = 0; // frame base address we will write to.
+
+  if(LogEndMarkerAddr == 0)
+  {
+    LogEndMarkerAddr = GetLastEventAddrFromEEPROM();
+  }
+
+  DateTime nowtime = RTClib::now();
+  uint64_t epoch = static_cast <uint64_t>(nowtime.unixtime());
+
+  // EEPROM event log frame is 16 bytes, which means 128 events can be logged
+  
+  // EEPROM event log frame template
+  uint8_t cells[16] = {0,0,0,0,0,0,0,0,0,0,0,0,MAX_COUNT_8BIT,0,0,0};
+  
+  // byte [0] to [7] : Y2K38 compliant unix epoch
+  // byte [8] and [9] : eventcode. byte [8] is eventcode MSB, [9] is LSB.
+  // byte [10] and [11] : eventdata. byte [10] is eventdata MSB, [11] is LSB.
+  // byte [12] : last event marker. set to 255 if part of the last event frame.
+  // byte [13] to [15] : padding bytes set to 0.
+  memcpy(&(cells[0]),epoch,sizeof(epoch));
+  memcpy(&(cells[8]),eventCode,sizeof(eventCode));
+  memcpy(&(cells[8]),eventData,sizeof(eventData));
+  
+  // write strategy : circular logging for wear levelling.
+  
+  if(LogEndMarkerAddr !=0) 
+  {
+    writeAddr = (LogEndMarkerAddr+4)%EEPROM.length();
+  }
+  else
+  {
+    writeAddr = 0;
+  } 
+
+  int8_t ret = WriteFrameToEEPROM(writeAddr,frame)
+  if(!ret) 
+  {
+    LogEndMarkerAddr = (LogEndMarkerAddr+16)%EEPROM.length()
+  } // Write End of log marker if write successful.
+
+}
+
 
 void setup() 
 {
   
   wdt_disable();
+  logEventToEEPROM(0,0); // Signalling unit start-up
   Serial.begin(57600);
   Serial1.begin(9600);
   Wire.begin();
@@ -1479,7 +1565,8 @@ if (linetest)
   DebugPrint(String(MovingAveragesTimerNumber),1);
   DebugPrint(F("\n"),1);
 
-  wdt_enable(WDTO_2S); 
+  wdt_enable(WDTO_2S);
+  logEventToEEPROM(1,0); // Signalling unit Configure OK. 
 
 }
 
@@ -1912,6 +1999,9 @@ void loop()
 
         DebugPrint(String(second(sync_time)),1);
         DebugPrint(F("\n"),1);
+
+        // time sync OK.
+        logEventToEEPROM(3,0); // logging successful time sync.
 
         DebugPrint(F("loop: Enabling Moving Averages Timer"),1);
         DebugPrint(F("\n"),1);
