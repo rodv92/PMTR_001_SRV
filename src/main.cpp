@@ -32,7 +32,7 @@ uint16_t PZEMReads = 0;
 uint8_t DeviceAddress;
 uint16_t LogEndMarkerAddr = 0; // eventcode is never written at index 0, so it means that it is uninitialized and we must find
 // it with GetLastEventAddrFromEEPROM(). If it returns 0, it means no events are logged.
- 
+uint16_t globalEventCounter = 0; 
 
 ISR_Timer ISR_timer;
 DS3231 myRTC;
@@ -210,10 +210,43 @@ String GetStringFromId(uint16_t stringId)
       return String(F("5V DC Bus low voltage"));
     case 14:
       return String(F("5V DC Bus critical low voltage. imminent shutdown"));
+    case 17:
+      return String(F("EEPROM cleared"));
+    
     default:
       return String(F("Unknown event code"));
        
   }
+}
+
+size_t print64(uint64_t number, int base)
+{
+    size_t n = 0;
+    unsigned char buf[64];
+    uint8_t i = 0;
+
+    if (number == 0)
+    {
+        n += Serial.print((char)'0');
+        return n;
+    }
+
+    if (base < 2) base = 2;
+    else if (base > 16) base = 16;
+
+    while (number > 0)
+    {
+        uint64_t q = number/base;
+        buf[i++] = number - q*base;
+        number = q;
+    }
+
+    for (; i > 0; i--)
+    n += Serial.print((char) (buf[i - 1] < 10 ?
+    '0' + buf[i - 1] :
+    'A' + buf[i - 1] - 10));
+
+    return n;
 }
 
 inline void DebugPrint(String DebugStr, uint8_t myDebugLevel)
@@ -233,6 +266,37 @@ inline void DebugPrint(uint8_t DebugNum, uint8_t myDebugLevel)
     Serial.flush();
   }
 }
+
+
+inline void DebugPrint(int8_t DebugNum, uint8_t myDebugLevel)
+{
+  if (myDebugLevel <= DebugLevel)
+  {
+    Serial.print(DebugNum);
+    Serial.flush();
+  }
+}
+
+inline void DebugPrint(int16_t DebugNum, uint8_t myDebugLevel)
+{
+  if (myDebugLevel <= DebugLevel)
+  {
+    Serial.print(DebugNum);
+    Serial.flush();
+  }
+}
+
+
+
+inline void DebugPrint(uint64_t DebugNum, uint8_t myDebugLevel)
+{
+  if (myDebugLevel <= DebugLevel)
+  {
+    print64(DebugNum,10);
+    Serial.flush();
+  }
+}
+
 
 const byte numChars = 40;
 char receivedChars[numChars]; // an array to store the received data
@@ -1406,16 +1470,6 @@ long readVcc()
 
 }
 
-void clearEEPROM()
-{
-    // usually called by backend or from serial debug to clear all events stored in the EEPROM
-    for (uint16_t i = 0 ; i < EEPROM.length() ; i++) 
-    {
-      EEPROM.write(i, 0);
-    }
-    LogEndMarkerAddr = EEPROM.length() - 4; // ensures next log write is at base address 0.
-}
-
 uint16_t GetLastEventAddrFromEEPROM()
 {
 
@@ -1445,6 +1499,7 @@ int8_t WriteFrameToEEPROM(uint16_t addr, uint8_t frame[16])
   }
 
   EEPROM.update((addr - 4 + EEPROM.length()) % EEPROM.length(),0); // resets previous last event marker.
+  return 0;
 
 }
 
@@ -1454,11 +1509,30 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
 
   if(LogEndMarkerAddr == 0)
   {
+    //LogEndMarkerAddr initialized at 0 (recent reset?). we have to search for last event in EEPROM and also restore globalEventCounter.
+    DebugPrint("LogEndMarkerAddr initialized at 0. Getting last event address from EEPROM\n",0);
+    
     LogEndMarkerAddr = GetLastEventAddrFromEEPROM();
+    if (LogEndMarkerAddr == 0)
+    {
+      DebugPrint("Log is empty\n",0);
+      globalEventCounter = 0;
+    }
+    else
+    {
+      EEPROM.get(LogEndMarkerAddr +1,globalEventCounter);
+      DebugPrint("LogEndMarkerAddr\tglobalEventCounter:\n",0);
+      DebugPrint(String(LogEndMarkerAddr),0);
+      DebugPrint("\t",0);
+      DebugPrint(String(globalEventCounter),0);
+      DebugPrint("\n",0);   
+    }
   }
 
+  globalEventCounter++; // increment before write to EEPROM
+
   DateTime nowtime = RTClib::now();
-  uint64_t epoch = static_cast <uint64_t>(nowtime.unixtime());
+  uint32_t epoch = nowtime.unixtime();
 
   // EEPROM event log frame is 16 bytes, which means 128 events can be logged
   
@@ -1469,11 +1543,25 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
   // byte [8] and [9] : eventcode. byte [8] is eventcode MSB, [9] is LSB.
   // byte [10] and [11] : eventdata. byte [10] is eventdata MSB, [11] is LSB.
   // byte [12] : last event marker. set to 255 if part of the last event frame.
-  // byte [13] to [15] : padding bytes set to 0.
-  memcpy(&(frame[0]),epoch,sizeof(epoch));
-  memcpy(&(frame[8]),eventCode,sizeof(eventCode));
-  memcpy(&(frame[8]),eventData,sizeof(eventData));
+  // byte [13] to [14] : global event counter. used by backend to fetch missing event and ensure proper sorting/indexing, as two event may have the same timestamp in epoch 
+  // byte [15] : padding byte set to 0 / reserved for future use
+  DebugPrint("epoch:\n",0);
+  DebugPrint(String(epoch),0);
+  DebugPrint("\n",0);
+
+  memcpy(&(frame[0]),&epoch,sizeof(epoch));
+  memcpy(&(frame[8]),&eventCode,sizeof(eventCode));
+  memcpy(&(frame[10]),&eventData,sizeof(eventData));
+  memcpy(&(frame[13]),&globalEventCounter,sizeof(globalEventCounter));
   
+  DebugPrint("frame:\n",0);
+  for (uint8_t k=0;k<16;k++)
+  {
+    DebugPrint(String(frame[k]),0);
+    DebugPrint("\t",0);
+  }
+  DebugPrint("\n",0);
+
   // write strategy : circular logging for wear levelling.
   
   if(LogEndMarkerAddr !=0) 
@@ -1489,37 +1577,160 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
   if(!ret) 
   {
     LogEndMarkerAddr = (LogEndMarkerAddr+16)%EEPROM.length();
-  } // Write End of log marker if write successful.
+  } // Update End of log marker if write successful.
+  else
+  {
+    // rollback globalEventCounter
+    DebugPrint(String(ret),0);
+    globalEventCounter--;
+  }
 
+}
+
+uint16_t clearEEPROM(bool HardErase)
+{
+    // HardErase also reset global event counter (if data on EEPROM is not trusted / or need to reset the counter)
+    // SoftErase does not resets the globalEventCounter, and logs that EEPROM was erased to the EEPROM as the first event.
+    if(!HardErase)
+    {
+      uint16_t LogEndMarkerAddr = GetLastEventAddrFromEEPROM();
+      if(LogEndMarkerAddr != 0)
+      {
+        EEPROM.get(LogEndMarkerAddr + 1,globalEventCounter);
+      }
+      else
+      {
+        globalEventCounter = 0;
+      }
+      logEventToEEPROM(17,0);
+    }
+    else
+    {
+      globalEventCounter = 0;
+    }
+    
+
+    // usually called by backend or from serial debug to clear all events stored in the EEPROM
+    for (uint16_t i = 0 ; i < EEPROM.length() ; i++) 
+    {
+      EEPROM.write(i, 0);
+    }
+    LogEndMarkerAddr = EEPROM.length() - 4; // ensures next log write is at base address 0.
+
+}
+
+void DumpEEPROM()
+{
+    DebugPrint("\n",0);
+    for (uint16_t i = 0 ; i < EEPROM.length() ; i+=16) 
+    {
+      for (uint16_t j = 0 ; j < 16 ; j++) 
+      {
+        DebugPrint(String(EEPROM.read(i+j)), 0);
+        DebugPrint("\t",0);
+
+      }
+      DebugPrint("\n",0);
+    }
 }
 
 int16_t DumpEventLog()
 {
 
+  DebugPrint("\n",0);
+  bool HasLogCycled = true;
+
   if(LogEndMarkerAddr == 0)
   {
     LogEndMarkerAddr = GetLastEventAddrFromEEPROM();
-    if(LogEndMarkerAddr == 0) {DebugPrint(F("\nLog is empty.\n"),0);}  
+    if(LogEndMarkerAddr == 0) {DebugPrint(F("Log is empty.\n"),0);return 0;}  
   }
+
+  DebugPrint("DumpEventLog: LogEndMarkerAddr baseAddr\n",0);
+  DebugPrint(String(LogEndMarkerAddr),0);
+  DebugPrint("\t",0);
+
   
   uint16_t baseAddr = (LogEndMarkerAddr + 4) % EEPROM.length();
+  
+  DebugPrint(String(baseAddr),0);
+  DebugPrint("\n",0);
   
   for(uint16_t i=baseAddr;i<baseAddr+EEPROM.length();i+=16)
   {
     uint16_t realindex = i % EEPROM.length();
-    uint64_t epoch = 0;
+    uint32_t epoch = 0;
     uint16_t eventcode = MAX_COUNT_16BIT;
-    uint16_t eventdata = MAX_COUNT_16BIT; 
+    uint16_t eventdata = MAX_COUNT_16BIT;
+    
+    //DebugPrint(String(realindex),0);
+    //DebugPrint("\n",0);
+   
     EEPROM.get(realindex,epoch);
     if(epoch == 0)
     {
-      if(realindex == baseAddr) {DebugPrint("\nUnexpected empty event at log start!\n",0);return 1;}
-      else {DebugPrint("\n\nEnd of log\n",0);return 0;}
+      if(realindex == baseAddr) 
+      {
+        DebugPrint("Log has not cycled yet.\n",0);
+        HasLogCycled = false;
+        break;
+      }
+      else 
+      {
+        DebugPrint("Unexpected event log end at address:\t",0);
+        DebugPrint(String(realindex),0);
+        return 1;
+      }
     }
-    EEPROM.get(realindex += sizeof(epoch),eventcode);
+    EEPROM.get(realindex += sizeof(uint64_t),eventcode);
     EEPROM.get(realindex += sizeof(eventcode),eventdata);  
-    //DebugPrint{}
+    DebugPrint(F("Event:\t"),0);
+    DebugPrint(String(epoch),0); // TODO : Format as human readable datetime
+    DebugPrint(F("\t"),0);
+    DebugPrint(GetStringFromId(eventcode),0); // TODO : Format as human readable datetime
+    DebugPrint(F("\t"),0);
+    DebugPrint(String(eventdata),0);
+    DebugPrint(F("\n"),0);
   }
+
+  if(!HasLogCycled)
+  {
+    for(uint16_t i=0;i<baseAddr;i+=16)
+    {
+
+      uint32_t epoch = 0;
+      uint16_t eventcode = MAX_COUNT_16BIT;
+      uint16_t eventdata = MAX_COUNT_16BIT;
+    
+      //DebugPrint(String(i),0);
+      //DebugPrint("\n",0);
+      uint16_t readAddr = i;
+
+      EEPROM.get(readAddr,epoch);
+
+      if(epoch == 0)
+      {
+        DebugPrint("Unexpected event log end at address:\t",0);
+        DebugPrint(String(i),0);
+        return 1;
+      }
+      
+      EEPROM.get(readAddr += sizeof(uint64_t),eventcode);
+      EEPROM.get(readAddr += sizeof(eventcode),eventdata);  
+      DebugPrint(F("Event:\t"),0);
+      DebugPrint(String(epoch),0); // TODO : Format as human readable datetime
+      DebugPrint(F("\t"),0);
+      DebugPrint(GetStringFromId(eventcode),0); // TODO : Format as human readable datetime
+      DebugPrint(F("\t"),0);
+      DebugPrint(String(eventdata),0);
+      DebugPrint(F("\n"),0);
+    }
+
+  }
+
+  
+  DebugPrint("Log end.\n",0);
+  return 0;
 }
 
 
@@ -1527,10 +1738,11 @@ void setup()
 {
   
   wdt_disable();
-  logEventToEEPROM(0,0); // logging unit start-up
+  //clearEEPROM(true);
   Serial.begin(57600);
   Serial1.begin(9600);
   Wire.begin();
+  logEventToEEPROM(0,0); // logging unit start-up
   
   pinMode(ADG333A_IN1_PIN,OUTPUT);
   pinMode(ADG333A_IN2_PIN,OUTPUT);
@@ -1649,7 +1861,7 @@ if (linetest)
   DebugPrint(String(MovingAveragesTimerNumber),1);
   DebugPrint(F("\n"),1);
 
-  wdt_enable(WDTO_2S);
+  wdt_enable(WDTO_4S);
   logEventToEEPROM(1,0); // logging unit Configure OK. 
 
 }
@@ -1900,7 +2112,7 @@ void PrintCurrentTime(uint8_t DebugLevel)
   
 }
 
-void process_command()
+void processCommand()
 {
   
   // get now values
@@ -1919,6 +2131,16 @@ void process_command()
   else if (!(strcmp(receivedChars , "dcb")))
   {
     DumpCircularBuffer(0);
+  }
+  else if (!(strcmp(receivedChars , "dl")))
+  {
+    int16_t ret = 0;
+    ret = DumpEventLog();
+  }
+  else if (!(strcmp(receivedChars , "dee")))
+  {
+    int16_t ret = 0;
+    DumpEEPROM();
   }
   
   
@@ -1981,7 +2203,7 @@ void loop()
   if(newData)
   {
     newData = false;
-    process_command();    
+    processCommand();    
   }
   
 
@@ -2082,7 +2304,7 @@ void loop()
         DebugPrint(F("\n"),1);
 
         // time sync OK.
-        logEventToEEPROM(3,0); // logging successful time sync.
+        logEventToEEPROM(8,0); // logging successful time sync.
 
         DebugPrint(F("loop: Enabling Moving Averages Timer"),1);
         DebugPrint(F("\n"),1);
