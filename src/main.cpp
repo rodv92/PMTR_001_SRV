@@ -34,6 +34,18 @@ uint16_t LogEndMarkerAddr = 0; // eventcode is never written at index 0, so it m
 // it with GetLastEventAddrFromEEPROM(). If it returns 0, it means no events are logged.
 uint16_t globalEventCounter = 0; 
 
+uint16_t DCBus5VLowVoltageThr =  4500; // 5V DC Bus Low Voltage Threshold in mV.
+uint16_t DCBus12VLowVoltageThr =  10800; // 12 DC Bys Low Voltage Threshold in mV.
+
+uint16_t DCBus5VLowVoltageRecThr =  4900; // 5V DC Bus Low Voltage Recovery Threshold in mV.
+uint16_t DCBus12VLowVoltageRecThr =  11200; // 12 DC Bys Low Voltage Recovery Threshold in mV.
+
+
+bool isDCBus5VLowVoltage = false;
+bool isDCBus12VLowVoltage = false;
+
+
+
 ISR_Timer ISR_timer;
 DS3231 myRTC;
 
@@ -43,6 +55,10 @@ DS3231 myRTC;
 #define ADG333A_IN2_PIN 33
 #define ADG333A_IN3_PIN 34
 #define ADG333A_IN4_PIN 35
+
+// Analog Pin for 12V DC Bus Voltage Read
+#define DCBUS12V_PIN A15
+
 
 PZEM004Tv30 pzem(&Serial2);
 time_t sync_time;
@@ -79,6 +95,7 @@ struct MovingAveragesStruct
 */
 
 uint16_t NowValues[18]; // contains most recent values read from PZEM. used as storage since PZEM cannot be queried inside ISR because it uses Serial.
+uint16_t DCBusVoltage[2]; // DCBusVoltage[0] is 5V DC Bus voltage (regulator is bypassed) DCBusVoltage[1] is the 12V DC Bus voltage
 
 struct MovingAveragesStructV2
 {
@@ -151,7 +168,7 @@ const int numCoils = 12;
 
 const int numDiscreteInputs = 12;
 //const int numHoldingRegisters = 28;
-const int numHoldingRegisters = 109;
+const int numHoldingRegisters = 119;
 
 
 // HOLDING REGISTERS FOR TELEMETRY :
@@ -207,9 +224,13 @@ String GetStringFromId(uint16_t stringId)
     case 12:
       return String(F("12V DC Bus critical low voltage. imminent shutdown"));
     case 13:
-      return String(F("5V DC Bus low voltage"));
+      return String(F("12V DC Bus voltage recovered"));
     case 14:
+      return String(F("5V DC Bus low voltage"));
+    case 15:
       return String(F("5V DC Bus critical low voltage. imminent shutdown"));
+    case 16:
+      return String(F("5V DC Bus voltage recovered"));
     case 17:
       return String(F("EEPROM cleared"));
     
@@ -948,6 +969,48 @@ uint32_t GetProcessingDelay()
   return ProcessingDelay;
 }
 
+uint16_t readVcc() 
+{
+ 
+  long result;
+  
+  // Read 1.1V reference against AVcc
+  ADMUX = _BV(REFS0) | _BV(MUX4) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+  
+  delay(2); // Wait for Vref to settle
+  ADCSRA |= _BV(ADSC); // Convert
+  while (bit_is_set(ADCSRA,ADSC));
+  result = ADCL;
+  result |= ADCH<<8;
+  //result = 1126400L / result; // Back-calculate AVcc in mV
+  // after calibration
+
+  result = 1129400L / result; // Back-calculate AVcc in mV
+  result -= 255;
+  return result;
+
+}
+
+uint16_t read12VDCbus() 
+{
+  // not valid once 5V DC bus voltage falls below 5V, not useful anyway at this point. 
+  uint8_t admuxbck = ADMUX;
+  uint8_t adcsrabck = ADCSRA;
+  uint8_t adcsrbbck = ADCSRB;
+
+  analogReference(DEFAULT);
+
+  uint32_t tmpVoltage =  analogRead(DCBUS12V_PIN);
+  tmpVoltage = static_cast <uint32_t> (floor(0.5f + (tmpVoltage*14310)/1023));  
+  
+  analogReference(INTERNAL1V1);
+  ADMUX = admuxbck;
+  ADCSRA = adcsrabck;
+  ADCSRB = adcsrbbck;
+
+  return tmpVoltage;
+
+}
 
 void FillNowValuesAndRegisters()
 {
@@ -996,11 +1059,16 @@ void FillNowValuesAndRegisters()
     delay(333);
     //delay(333 - constrain(ProcessingCompensatedDelayMillis,0,332) - int(bool(ProcessingCompensatedDelayMicros)));
     //delay(333 - constrain(ProcessingCompensatedDelayMillis,0,333));
-    
+    // TODO : fix delay compensation bug that increases PZEM error rate. for now disabling delay compensation.
+
     ProcessingCompensatedDelayMillis = GetProcessingDelay();
     
     DebugPrint(String(ProcessingCompensatedDelayMillis),7);
     DebugPrint("\n",7);
+
+    // first get 5V DC BUS Voltage
+    DCBusVoltage[0] = readVcc();
+    DCBusVoltage[1] = read12VDCbus();
     
     SelectPZEM_v2(i);
     
@@ -1012,6 +1080,7 @@ void FillNowValuesAndRegisters()
     uint16_t frequency = 0;
     uint16_t pf = 0;
     uint16_t energy = 0;
+  
 
     for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
     {
@@ -1023,7 +1092,8 @@ void FillNowValuesAndRegisters()
     }
 
     if (isnan(tmpval)) {voltage = 0;} // NaN despite retries.
-
+    NowValues[0 + i] = voltage;
+    
     for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
     {
       tmpval = pzem.current();
@@ -1034,7 +1104,8 @@ void FillNowValuesAndRegisters()
     }
 
     if (isnan(tmpval)) {current = 0;} // NaN despite retries.
-
+    NowValues[3 + i] = current;
+    
     for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
     {
       tmpval = pzem.power();
@@ -1046,6 +1117,7 @@ void FillNowValuesAndRegisters()
     }
 
     if (isnan(tmpval)) {power = 0;} // NaN despite retries.
+    NowValues[6 + i] = power;
     
     
     for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
@@ -1058,6 +1130,7 @@ void FillNowValuesAndRegisters()
     }
 
     if (isnan(tmpval)) {frequency = 0;} // NaN despite retries.
+    NowValues[9 + i] = frequency;
     
     for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
     {
@@ -1069,6 +1142,7 @@ void FillNowValuesAndRegisters()
     }
 
     if (isnan(tmpval)) {pf = 0;} // NaN despite retries.
+    NowValues[12 + i] = pf;
     
     for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
     {
@@ -1080,6 +1154,7 @@ void FillNowValuesAndRegisters()
     }
 
     if (isnan(tmpval)) {energy = 0;} // NaN despite retries.
+    NowValues[15 + i] = energy;  
     
 
     // TODO : overflow management. (like boost narrow-cast) or using pow(2,sizeof(uint_16t)*8) and <template>
@@ -1095,14 +1170,12 @@ void FillNowValuesAndRegisters()
     // TODO : isochronous sampling. compensate processing delay and remove it from PZEM polling delay.
      
 
-    if(!isnan(voltage)){
-        //Serial.print("Voltage: "); Serial.print(voltage); Serial.println("V");
-        NowValues[0 + i] = voltage;
-    } else {
-        //Serial.println("Error reading voltage");
-        NowValues[0 + i] = 0;
-        Anyerror = true;
-    }
+    
+    ret = ModbusRTUServer.holdingRegisterWrite(70,DCBusVoltage[0]); // 5V DC Bus Voltage in mV
+    ret = ModbusRTUServer.holdingRegisterWrite(71,DCBusVoltage[1]); // 12 DC Bus Voltage in mV
+    
+    
+
     //memcpy(VoltageModbusRegister, &(NowValues[0 + i]), sizeof(VoltageModbusRegister));
 
     ret = ModbusRTUServer.holdingRegisterWrite(80 + 2*i,NowValues[0 + i]);
@@ -1111,16 +1184,6 @@ void FillNowValuesAndRegisters()
     //ret = ModbusRTUServer.holdingRegisterWrite(81 + 2*i,VoltageModbusRegister[1]);
 
       
-    //NowValues[3] = pzem.current();
-    if(!isnan(current)){
-        //Serial.print("Current: "); Serial.print(current); Serial.println("A");
-        NowValues[3 + i] = current;
-        
-    } else {
-        //Serial.println("Error reading current");
-        NowValues[3 + i] = 0;
-        Anyerror = true;
-    }
     //memcpy(CurrentModbusRegister, &(NowValues[3 + i]), sizeof(CurrentModbusRegister));
 
     ret = ModbusRTUServer.holdingRegisterWrite(86 + 2*i,NowValues[3 + i]);
@@ -1128,18 +1191,6 @@ void FillNowValuesAndRegisters()
     //ret = ModbusRTUServer.holdingRegisterWrite(86 + 2*i,CurrentModbusRegister[0]);
     //ret = ModbusRTUServer.holdingRegisterWrite(87 + 2*i,CurrentModbusRegister[1]);
 
-
-
-    //NowValues[6] = pzem.power();
-    if(!isnan(power)){
-        //Serial.print("Power: "); Serial.print(power); Serial.println("W");
-        NowValues[6 + i] = power;
-    
-    } else {
-        //Serial.println("Error reading power");
-        NowValues[6 + i] = 0;
-        Anyerror = true;
-    }
     //memcpy(PowerModbusRegister, &(NowValues[6 + i]), sizeof(PowerModbusRegister));
 
     ret = ModbusRTUServer.holdingRegisterWrite(92 + 2*i,NowValues[6 +i]);
@@ -1148,16 +1199,6 @@ void FillNowValuesAndRegisters()
     //ret = ModbusRTUServer.holdingRegisterWrite(93 + 2*i,PowerModbusRegister[1]);  
   
 
-    //NowValues[9] = pzem.frequency();
-    if(!isnan(frequency)){
-        //Serial.print("Frequency: "); Serial.print(frequency, 1); Serial.println("Hz");
-        NowValues[9 + i] = frequency;
-    
-    } else {
-        //Serial.println("Error reading frequency");
-        NowValues[9 + i] = 0;
-        Anyerror = true;
-    }
     //memcpy(FrequencyModbusRegister, &(NowValues[9 + i]), sizeof(FrequencyModbusRegister));
 
     ret = ModbusRTUServer.holdingRegisterWrite(104 + 2*i,NowValues[9 + i]);
@@ -1166,15 +1207,6 @@ void FillNowValuesAndRegisters()
     //ret = ModbusRTUServer.holdingRegisterWrite(105 + 2*i,FrequencyModbusRegister[1]);
    
 
-    //NowValues[12] = pzem.pf();
-    if(!isnan(pf)){
-        //Serial.print("PF: "); Serial.println(pf);
-        NowValues[12 + i] = pf;
-    } else {
-        //Serial.println("Error reading power factor");
-        NowValues[12 + i] = 0;
-        Anyerror = true;
-    }
     //memcpy(PowerFactorModbusRegister, &(NowValues[12 + i]), sizeof(PowerFactorModbusRegister));
     
     ret = ModbusRTUServer.holdingRegisterWrite(110 + 2*i,NowValues[12 + i]);
@@ -1182,16 +1214,6 @@ void FillNowValuesAndRegisters()
     //ret = ModbusRTUServer.holdingRegisterWrite(110 + 2*i,PowerFactorModbusRegister[0]);
     //ret = ModbusRTUServer.holdingRegisterWrite(111 + 2*i,PowerFactorModbusRegister[1]);
 
-
-    //NowValues[15] = pzem.energy();
-    if(!isnan(energy)){
-        //Serial.print("Energy: "); Serial.print(energy,3); Serial.println("kWh");
-        NowValues[15 + i] = energy;  
-    } else {
-        //Serial.println("Error reading energy");
-        NowValues[15 + i] = 0;
-        Anyerror = true;
-    }
     //memcpy(EnergyModbusRegister, &(NowValues[15 + i]), sizeof(EnergyModbusRegister));
 
     ret = ModbusRTUServer.holdingRegisterWrite(98 + 2*i,NowValues[15 + i]);
@@ -1450,25 +1472,6 @@ void CPL_line_test(uint8_t test_seconds)
   }
 }
 
-long readVcc() 
-{
- 
-  long result;
-  // Read 1.1V reference against AVcc
-  ADMUX = _BV(REFS0) | _BV(MUX4) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
-  delay(2); // Wait for Vref to settle
-  ADCSRA |= _BV(ADSC); // Convert
-  while (bit_is_set(ADCSRA,ADSC));
-  result = ADCL;
-  result |= ADCH<<8;
-  //result = 1126400L / result; // Back-calculate AVcc in mV
-  // after calibration
-
-  result = 1129400L / result; // Back-calculate AVcc in mV
-  result -= 255; 
-  return result;
-
-}
 
 uint16_t GetLastEventAddrFromEEPROM()
 {
@@ -1545,15 +1548,19 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
   // byte [12] : last event marker. set to 255 if part of the last event frame.
   // byte [13] to [14] : global event counter. used by backend to fetch missing event and ensure proper sorting/indexing, as two event may have the same timestamp in epoch 
   // byte [15] : padding byte set to 0 / reserved for future use
+ 
+  /*
   DebugPrint("epoch:\n",0);
   DebugPrint(String(epoch),0);
   DebugPrint("\n",0);
+  */
 
   memcpy(&(frame[0]),&epoch,sizeof(epoch));
   memcpy(&(frame[8]),&eventCode,sizeof(eventCode));
   memcpy(&(frame[10]),&eventData,sizeof(eventData));
   memcpy(&(frame[13]),&globalEventCounter,sizeof(globalEventCounter));
   
+  /*
   DebugPrint("frame:\n",0);
   for (uint8_t k=0;k<16;k++)
   {
@@ -1561,6 +1568,7 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
     DebugPrint("\t",0);
   }
   DebugPrint("\n",0);
+  */
 
   // write strategy : circular logging for wear levelling.
   
@@ -1684,8 +1692,15 @@ int16_t DumpEventLog()
     }
     EEPROM.get(realindex += sizeof(uint64_t),eventcode);
     EEPROM.get(realindex += sizeof(eventcode),eventdata);  
+    epoch -= UNIX_OFFSET; // localtime_r expects epoch since Jan1 2000 00:00, not Jan1 1970 00:00
+    // TODO : check Y2K38 support !! (uint64_t based time_t)
+    struct tm* nowtm = localtime(&epoch);
+  
+    char buffer[64];
+    strftime(buffer, 64, "%d %m %Y %H:%M:%S UTC", nowtm);   
+  
     DebugPrint(F("Event:\t"),0);
-    DebugPrint(String(epoch),0); // TODO : Format as human readable datetime
+    DebugPrint(String(buffer),0); // TODO : Format as human readable datetime
     DebugPrint(F("\t"),0);
     DebugPrint(GetStringFromId(eventcode),0); // TODO : Format as human readable datetime
     DebugPrint(F("\t"),0);
@@ -1717,8 +1732,16 @@ int16_t DumpEventLog()
       
       EEPROM.get(readAddr += sizeof(uint64_t),eventcode);
       EEPROM.get(readAddr += sizeof(eventcode),eventdata);  
+  
+      epoch -= UNIX_OFFSET; // localtime_r expects epoch since Jan1 2000 00:00, not Jan1 1970 00:00
+      // TODO : check Y2K38 support !! (uint64_t based time_t)
+      struct tm* nowtm = localtime(&epoch);
+      
+      char buffer[64];
+      strftime(buffer, 64, "%d %m %Y %H:%M:%S UTC", nowtm);   
+      
       DebugPrint(F("Event:\t"),0);
-      DebugPrint(String(epoch),0); // TODO : Format as human readable datetime
+      DebugPrint(String(buffer),0); // TODO : Format as human readable datetime
       DebugPrint(F("\t"),0);
       DebugPrint(GetStringFromId(eventcode),0); // TODO : Format as human readable datetime
       DebugPrint(F("\t"),0);
@@ -1822,20 +1845,20 @@ if (linetest)
   DebugPrint(String(ret),1);
   DebugPrint(F("\n"),1);
   
-  // configure discrete inputs at address 0x40
+  // configure discrete inputs at address 40
   ret = ModbusRTUServer.configureDiscreteInputs(40, numDiscreteInputs);
   DebugPrint(F("setup: config discrete inputs:\t "),1);
   DebugPrint(String(ret),1);  
   DebugPrint(F("\n"),1);
   
-  // configure holding registers at address 0x80
-  ret = ModbusRTUServer.configureHoldingRegisters(80, numHoldingRegisters);
+  // configure holding registers at address 70
+  ret = ModbusRTUServer.configureHoldingRegisters(70, numHoldingRegisters);
   DebugPrint(F("setup: config holding registers:\t"),1);
   DebugPrint(String(ret),1);
   DebugPrint(F("\n"),1);
   
 
-  // configure input registers at address 0x00
+  // configure input registers at address 200
   ret = ModbusRTUServer.configureInputRegisters(200, numInputRegisters);
   DebugPrint(F("setup: config input registers:\t"),1);
   DebugPrint(String(ret),1);
@@ -1861,7 +1884,7 @@ if (linetest)
   DebugPrint(String(MovingAveragesTimerNumber),1);
   DebugPrint(F("\n"),1);
 
-  wdt_enable(WDTO_4S);
+  wdt_enable(WDTO_8S);
   logEventToEEPROM(1,0); // logging unit Configure OK. 
 
 }
@@ -1965,9 +1988,15 @@ void PrintNowValues(uint8_t DebugLevel)
   DebugPrint(FormatIntToDecimal(String(NowValues[17]),1),DebugLevel);
   DebugPrint(F(" kWh\n"),DebugLevel);
 
-  DebugPrint(F("5V BUS Voltage:\t"),DebugLevel);
+  DebugPrint(F("5V DC BUS Voltage:\t"),DebugLevel);
 
   DebugPrint(String(readVcc()),DebugLevel);
+  DebugPrint(F(" mV\n"),DebugLevel);
+
+
+  DebugPrint(F("12V DC BUS Voltage:\t"),DebugLevel);
+
+  DebugPrint(String(read12VDCbus()),DebugLevel);
   DebugPrint(F(" mV\n"),DebugLevel);
 
   
@@ -2329,7 +2358,20 @@ void loop()
   FillAverageValuesRegisters();
   ProcessFormulas();
   PrintNowValues(2);
-  
+
+  if((DCBusVoltage[0] < DCBus5VLowVoltageThr) & !isDCBus5VLowVoltage) // prevent spamming the EEPROM event log.
+  {
+    logEventToEEPROM(14,DCBusVoltage[0]);
+    isDCBus5VLowVoltage = true;
+  }
+  if((DCBusVoltage[0] > DCBus5VLowVoltageRecThr) & isDCBus5VLowVoltage) // crossing recovery voltage.
+  {
+    logEventToEEPROM(16,DCBusVoltage[0]);
+    isDCBus5VLowVoltage = false;
+  }
+
+
+
   Anyerror = false;
 
 }
