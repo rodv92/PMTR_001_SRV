@@ -34,7 +34,7 @@ uint16_t LogEndMarkerAddr = 0; // eventcode is never written at index 0, so it m
 // it with GetLastEventAddrFromEEPROM(). If it returns 0, it means no events are logged.
 uint16_t globalEventCounter = 0; 
 
-uint16_t DCBus5VLowVoltageThr =  4500; // 5V DC Bus Low Voltage Threshold in mV.
+uint16_t DCBus5VLowVoltageThr =  4700; // 5V DC Bus Low Voltage Threshold in mV.
 uint16_t DCBus12VLowVoltageThr =  10800; // 12 DC Bys Low Voltage Threshold in mV.
 
 uint16_t DCBus5VLowVoltageRecThr =  4900; // 5V DC Bus Low Voltage Recovery Threshold in mV.
@@ -168,7 +168,7 @@ const int numCoils = 12;
 
 const int numDiscreteInputs = 12;
 //const int numHoldingRegisters = 28;
-const int numHoldingRegisters = 119;
+const int numHoldingRegisters = 111;
 
 
 // HOLDING REGISTERS FOR TELEMETRY :
@@ -526,31 +526,31 @@ void FillAverageValuesRegisters()
       */
 
       //U Avg
-      ret = ModbusRTUServer.holdingRegisterWrite(116 + 2*i,myMovingAveragesStructV2_0.MovingAverageValues[0 + i]);
+      ret = ModbusRTUServer.holdingRegisterWrite(98 + i,static_cast <uint16_t> (myMovingAveragesStructV2_0.MovingAverageValues[0 + i]));
       
       //ret = ModbusRTUServer.holdingRegisterWrite(116 + 2*i,AvgVoltageModbusRegister[0]);
       //ret = ModbusRTUServer.holdingRegisterWrite(117 + 2*i,AvgVoltageModbusRegister[1]);
       
       //I Avg
-      ret = ModbusRTUServer.holdingRegisterWrite(122 + 2*i,myMovingAveragesStructV2_0.MovingAverageValues[3 + i]);
+      ret = ModbusRTUServer.holdingRegisterWrite(101 + i,static_cast <uint16_t> (myMovingAveragesStructV2_0.MovingAverageValues[3 + i]));
       
       //ret = ModbusRTUServer.holdingRegisterWrite(122 + 2*i,AvgCurrentModbusRegister[0]);
       //ret = ModbusRTUServer.holdingRegisterWrite(123 + 2*i,AvgCurrentModbusRegister[1]);
     
       //P Avg
-      ret = ModbusRTUServer.holdingRegisterWrite(128 + 2*i,myMovingAveragesStructV2_0.MovingAverageValues[6 + i]);
+      ret = ModbusRTUServer.holdingRegisterWrite(104 + i,static_cast <uint16_t> (myMovingAveragesStructV2_0.MovingAverageValues[6 + i]));
       
       //ret = ModbusRTUServer.holdingRegisterWrite(128 + 2*i,AvgPowerModbusRegister[0]);
       //ret = ModbusRTUServer.holdingRegisterWrite(129 + 2*i,AvgPowerModbusRegister[1]);
       
       //f Avg
-      ret = ModbusRTUServer.holdingRegisterWrite(134 + 2*i,myMovingAveragesStructV2_0.MovingAverageValues[9 + i]);
+      ret = ModbusRTUServer.holdingRegisterWrite(107 + i,static_cast <uint16_t> (myMovingAveragesStructV2_0.MovingAverageValues[9 + i]));
       
       //ret = ModbusRTUServer.holdingRegisterWrite(134 + 2*i,AvgFrequencyModbusRegister[0]);
       //ret = ModbusRTUServer.holdingRegisterWrite(135 + 2*i,AvgFrequencyModbusRegister[1]);
         
       //pf Avg
-      ret = ModbusRTUServer.holdingRegisterWrite(140 + 2*i,myMovingAveragesStructV2_0.MovingAverageValues[12 + i]);
+      ret = ModbusRTUServer.holdingRegisterWrite(110 + 2*i,static_cast <uint16_t>(myMovingAveragesStructV2_0.MovingAverageValues[12 + i]));
       
       //ret = ModbusRTUServer.holdingRegisterWrite(140 + 2*i,AvgPowerFactorModbusRegister[0]);
       //ret = ModbusRTUServer.holdingRegisterWrite(141 + 2*i,AvgPowerFactorModbusRegister[1]);
@@ -722,7 +722,7 @@ void ComputeMovingAveragesV2Handler()
               DebugPrint(String(SampleToAddIndex),6);
               DebugPrint(F("\n"),6);
               
-              MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = static_cast <uint16_t> (floor(MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] + ( (float) myCircularBufferValuesStruct.PZEMValues[SampleToAddIndex][indextype] - (float) myCircularBufferValuesStruct.PZEMValues[OldestSampleToDropIndex][indextype]) / (float) WindowLengths[indexWindows]));
+              MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = static_cast <uint32_t> (floor(0.5f + MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] + ( (float) myCircularBufferValuesStruct.PZEMValues[SampleToAddIndex][indextype] - (float) myCircularBufferValuesStruct.PZEMValues[OldestSampleToDropIndex][indextype]) / (float) WindowLengths[indexWindows]));
               
           }
 
@@ -748,7 +748,7 @@ void ComputeMovingAveragesV2Handler()
 
 
               // update using cumulative average update formula
-              MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype]*(myCircularBufferValuesStruct.FillNbValues -1) + myCircularBufferValuesStruct.PZEMValues[myCircularBufferValuesStruct.FillNbValues - 1][indextype]) / myCircularBufferValuesStruct.FillNbValues;
+              MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = static_cast <uint32_t> (floor(0.5f + (float) (MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype]* (float) (myCircularBufferValuesStruct.FillNbValues -1) + (float) myCircularBufferValuesStruct.PZEMValues[myCircularBufferValuesStruct.FillNbValues - 1][indextype]) / (float) myCircularBufferValuesStruct.FillNbValues));
           }
         }
 
@@ -841,7 +841,7 @@ void ComputeMovingAveragesV2Handler()
               DebugPrint(String(NbSamplesToProcess),6);
               DebugPrint(F("\n"),6);
 
-              MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] /= NbSamplesToProcess;
+              MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] = static_cast <uint32_t> (floor(0.5f + (float) MovingAveragesStructV2ptr[indexptr]->MovingAverageValues[indextype] / (float) NbSamplesToProcess));
 
 /*
               Serial.println("DIVIDING:");
@@ -1171,14 +1171,14 @@ void FillNowValuesAndRegisters()
      
 
     
-    ret = ModbusRTUServer.holdingRegisterWrite(70,DCBusVoltage[0]); // 5V DC Bus Voltage in mV
-    ret = ModbusRTUServer.holdingRegisterWrite(71,DCBusVoltage[1]); // 12 DC Bus Voltage in mV
+    ret = ModbusRTUServer.holdingRegisterWrite(78,DCBusVoltage[0]); // 5V DC Bus Voltage in mV
+    ret = ModbusRTUServer.holdingRegisterWrite(79,DCBusVoltage[1]); // 12 DC Bus Voltage in mV
     
     
 
     //memcpy(VoltageModbusRegister, &(NowValues[0 + i]), sizeof(VoltageModbusRegister));
 
-    ret = ModbusRTUServer.holdingRegisterWrite(80 + 2*i,NowValues[0 + i]);
+    ret = ModbusRTUServer.holdingRegisterWrite(80 + i,NowValues[0 + i]);
     
     //ret = ModbusRTUServer.holdingRegisterWrite(80 + 2*i,VoltageModbusRegister[0]);
     //ret = ModbusRTUServer.holdingRegisterWrite(81 + 2*i,VoltageModbusRegister[1]);
@@ -1186,14 +1186,14 @@ void FillNowValuesAndRegisters()
       
     //memcpy(CurrentModbusRegister, &(NowValues[3 + i]), sizeof(CurrentModbusRegister));
 
-    ret = ModbusRTUServer.holdingRegisterWrite(86 + 2*i,NowValues[3 + i]);
+    ret = ModbusRTUServer.holdingRegisterWrite(83 + i,NowValues[3 + i]);
 
     //ret = ModbusRTUServer.holdingRegisterWrite(86 + 2*i,CurrentModbusRegister[0]);
     //ret = ModbusRTUServer.holdingRegisterWrite(87 + 2*i,CurrentModbusRegister[1]);
 
     //memcpy(PowerModbusRegister, &(NowValues[6 + i]), sizeof(PowerModbusRegister));
 
-    ret = ModbusRTUServer.holdingRegisterWrite(92 + 2*i,NowValues[6 +i]);
+    ret = ModbusRTUServer.holdingRegisterWrite(86 + i,NowValues[6 +i]);
     
     //ret = ModbusRTUServer.holdingRegisterWrite(92 + 2*i,PowerModbusRegister[0]);
     //ret = ModbusRTUServer.holdingRegisterWrite(93 + 2*i,PowerModbusRegister[1]);  
@@ -1201,7 +1201,7 @@ void FillNowValuesAndRegisters()
 
     //memcpy(FrequencyModbusRegister, &(NowValues[9 + i]), sizeof(FrequencyModbusRegister));
 
-    ret = ModbusRTUServer.holdingRegisterWrite(104 + 2*i,NowValues[9 + i]);
+    ret = ModbusRTUServer.holdingRegisterWrite(92 + i,NowValues[9 + i]);
 
     //ret = ModbusRTUServer.holdingRegisterWrite(104 + 2*i,FrequencyModbusRegister[0]);
     //ret = ModbusRTUServer.holdingRegisterWrite(105 + 2*i,FrequencyModbusRegister[1]);
@@ -1209,14 +1209,14 @@ void FillNowValuesAndRegisters()
 
     //memcpy(PowerFactorModbusRegister, &(NowValues[12 + i]), sizeof(PowerFactorModbusRegister));
     
-    ret = ModbusRTUServer.holdingRegisterWrite(110 + 2*i,NowValues[12 + i]);
+    ret = ModbusRTUServer.holdingRegisterWrite(95 + i,NowValues[12 + i]);
     
     //ret = ModbusRTUServer.holdingRegisterWrite(110 + 2*i,PowerFactorModbusRegister[0]);
     //ret = ModbusRTUServer.holdingRegisterWrite(111 + 2*i,PowerFactorModbusRegister[1]);
 
     //memcpy(EnergyModbusRegister, &(NowValues[15 + i]), sizeof(EnergyModbusRegister));
 
-    ret = ModbusRTUServer.holdingRegisterWrite(98 + 2*i,NowValues[15 + i]);
+    ret = ModbusRTUServer.holdingRegisterWrite(89 + i,NowValues[15 + i]);
     
     //ret = ModbusRTUServer.holdingRegisterWrite(98 + 2*i,EnergyModbusRegister[0]);
     //ret = ModbusRTUServer.holdingRegisterWrite(99 + 2*i,EnergyModbusRegister[1]);
@@ -1852,7 +1852,7 @@ if (linetest)
   DebugPrint(F("\n"),1);
   
   // configure holding registers at address 70
-  ret = ModbusRTUServer.configureHoldingRegisters(70, numHoldingRegisters);
+  ret = ModbusRTUServer.configureHoldingRegisters(78, numHoldingRegisters);
   DebugPrint(F("setup: config holding registers:\t"),1);
   DebugPrint(String(ret),1);
   DebugPrint(F("\n"),1);
@@ -2368,6 +2368,17 @@ void loop()
   {
     logEventToEEPROM(16,DCBusVoltage[0]);
     isDCBus5VLowVoltage = false;
+  }
+
+  if((DCBusVoltage[1] < DCBus12VLowVoltageThr) & !isDCBus12VLowVoltage) // prevent spamming the EEPROM event log.
+  {
+    logEventToEEPROM(11,DCBusVoltage[1]);
+    isDCBus12VLowVoltage = true;
+  }
+  if((DCBusVoltage[1] > DCBus12VLowVoltageRecThr) & isDCBus12VLowVoltage) // crossing recovery voltage.
+  {
+    logEventToEEPROM(13,DCBusVoltage[1]);
+    isDCBus12VLowVoltage = false;
   }
 
 
