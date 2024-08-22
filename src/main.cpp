@@ -11,6 +11,7 @@
 #include <DS3231.h>
 #include <time.h>
 #include <avr/wdt.h>
+#include <avr/power.h>
 #include <EEPROM.h>
 
 // To be included only in main(), .ino with setup() to avoid `Multiple Definitions` Linker Error
@@ -43,7 +44,7 @@ uint16_t DCBus12VLowVoltageRecThr =  11200; // 12 DC Bys Low Voltage Recovery Th
 
 bool isDCBus5VLowVoltage = false;
 bool isDCBus12VLowVoltage = false;
-
+bool isLowPowerMode = false;
 
 
 ISR_Timer ISR_timer;
@@ -240,6 +241,29 @@ String GetStringFromId(uint16_t stringId)
   }
 }
 
+
+void enableLowPowerMode()
+{
+  //Disable some peripherals to extend runtime in case of power loss and the unit is powered through the supercapacitor bank
+  power_usart0_disable(); // prevents communication using Serial USB
+  power_usart3_disable(); // not used
+  power_spi_disable(); // not used
+  isLowPowerMode = true;
+  maxPZEMRetries = 1;
+}
+
+
+void disableLowPowerMode()
+{
+  // re-enables previously disabled devices when reverting to nominal power supply operation
+  power_usart0_enable(); 
+  power_usart3_enable();
+  power_spi_enable(); 
+  isLowPowerMode = false;
+  maxPZEMRetries = 3;
+}
+
+
 size_t print64(uint64_t number, int base)
 {
     size_t n = 0;
@@ -272,7 +296,7 @@ size_t print64(uint64_t number, int base)
 
 inline void DebugPrint(String DebugStr, uint8_t myDebugLevel)
 {
-  if (myDebugLevel <= DebugLevel)
+  if ((myDebugLevel <= DebugLevel) & !isLowPowerMode)
   {
     Serial.print(DebugStr);
     Serial.flush();
@@ -281,7 +305,7 @@ inline void DebugPrint(String DebugStr, uint8_t myDebugLevel)
 
 inline void DebugPrint(uint8_t DebugNum, uint8_t myDebugLevel)
 {
-  if (myDebugLevel <= DebugLevel)
+  if ((myDebugLevel <= DebugLevel) & !isLowPowerMode)
   {
     Serial.print(DebugNum);
     Serial.flush();
@@ -291,7 +315,7 @@ inline void DebugPrint(uint8_t DebugNum, uint8_t myDebugLevel)
 
 inline void DebugPrint(int8_t DebugNum, uint8_t myDebugLevel)
 {
-  if (myDebugLevel <= DebugLevel)
+  if ((myDebugLevel <= DebugLevel) & !isLowPowerMode)
   {
     Serial.print(DebugNum);
     Serial.flush();
@@ -300,7 +324,7 @@ inline void DebugPrint(int8_t DebugNum, uint8_t myDebugLevel)
 
 inline void DebugPrint(int16_t DebugNum, uint8_t myDebugLevel)
 {
-  if (myDebugLevel <= DebugLevel)
+  if ((myDebugLevel <= DebugLevel) & !isLowPowerMode)
   {
     Serial.print(DebugNum);
     Serial.flush();
@@ -311,7 +335,7 @@ inline void DebugPrint(int16_t DebugNum, uint8_t myDebugLevel)
 
 inline void DebugPrint(uint64_t DebugNum, uint8_t myDebugLevel)
 {
-  if (myDebugLevel <= DebugLevel)
+  if ((myDebugLevel <= DebugLevel) & !isLowPowerMode)
   {
     print64(DebugNum,10);
     Serial.flush();
@@ -325,6 +349,7 @@ bool newData = false;
 
 void recvWithEndMarker(char endChar) 
 {
+  if(isLowPowerMode) {return;} // disable command shell
   static uint8_t ndx = 0;
   char rc;
  
@@ -2374,11 +2399,13 @@ void loop()
   {
     logEventToEEPROM(11,DCBusVoltage[1]);
     isDCBus12VLowVoltage = true;
+    enableLowPowerMode();
   }
   if((DCBusVoltage[1] > DCBus12VLowVoltageRecThr) & isDCBus12VLowVoltage) // crossing recovery voltage.
   {
     logEventToEEPROM(13,DCBusVoltage[1]);
     isDCBus12VLowVoltage = false;
+    disableLowPowerMode();
   }
 
 
