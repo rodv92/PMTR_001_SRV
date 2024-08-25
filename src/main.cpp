@@ -244,10 +244,20 @@ String GetStringFromId(uint16_t stringId)
 
 void enableLowPowerMode()
 {
+  
+  // disable Moving Averages calculation
+  ISR_timer.disable(MovingAveragesTimerNumber);
+
+
   //Disable some peripherals to extend runtime in case of power loss and the unit is powered through the supercapacitor bank
-  power_usart0_disable(); // prevents communication using Serial USB
-  power_usart3_disable(); // not used
-  power_spi_disable(); // not used
+  power_usart0_disable(); // Serial (USB Serial Debug commmands) disable
+  power_usart3_disable(); // Serial3 (not used) disable
+  power_spi_disable(); // SPI (not used) disable
+
+  // usart1 - is not disabled as it is used by ES1642 PLC module
+  // usart2 - is not disabled as it is used by PZEM (communication is throttled down)
+  // TWI - is not disabled as it is used by the DS3231 I2C RTC
+
   isLowPowerMode = true;
   maxPZEMRetries = 1;
 }
@@ -255,10 +265,15 @@ void enableLowPowerMode()
 
 void disableLowPowerMode()
 {
+
+  // re-enable Moving Averages calculation
+  ISR_timer.enable(MovingAveragesTimerNumber);
+
+
   // re-enables previously disabled devices when reverting to nominal power supply operation
-  power_usart0_enable(); 
-  power_usart3_enable();
-  power_spi_enable(); 
+  power_usart0_enable(); // Serial (Debug commmands) enable
+  power_usart3_enable(); // Serial3 (not used) enable
+  power_spi_enable();  // SPI (not used) enable
   isLowPowerMode = false;
   maxPZEMRetries = 3;
 }
@@ -1037,11 +1052,26 @@ uint16_t read12VDCbus()
 
 }
 
+void FillDCBusNowValuesAndRegisters()
+{
+    // get 5V DC BUS Voltage
+    DCBusVoltage[0] = readVcc();
+    // get 12V DC BUS Voltage
+    DCBusVoltage[1] = read12VDCbus();
+    //
+    //Fill Modbus Registers
+    int ret;
+    ret = ModbusRTUServer.holdingRegisterWrite(78,DCBusVoltage[0]); // 5V DC Bus Voltage in mV
+    ret = ModbusRTUServer.holdingRegisterWrite(79,DCBusVoltage[1]); // 12 DC Bus Voltage in mV
+    
+}
+
 void FillNowValuesAndRegisters()
 {
 
   long ret = 0;
-  
+  uint16_t ThrottlingFactorLowPowerMode = 5;
+
   uint32_t ProcessingCompensatedDelayMicros = 0;
   
   
@@ -1081,7 +1111,15 @@ void FillNowValuesAndRegisters()
     DebugPrint("\t",7);
     
 
-    delay(333);
+    if(isLowPowerMode)
+    {
+      delay(333*ThrottlingFactorLowPowerMode);
+    }
+    else
+    {
+      delay(333);
+    }
+
     //delay(333 - constrain(ProcessingCompensatedDelayMillis,0,332) - int(bool(ProcessingCompensatedDelayMicros)));
     //delay(333 - constrain(ProcessingCompensatedDelayMillis,0,333));
     // TODO : fix delay compensation bug that increases PZEM error rate. for now disabling delay compensation.
@@ -1091,9 +1129,6 @@ void FillNowValuesAndRegisters()
     DebugPrint(String(ProcessingCompensatedDelayMillis),7);
     DebugPrint("\n",7);
 
-    // first get 5V DC BUS Voltage
-    DCBusVoltage[0] = readVcc();
-    DCBusVoltage[1] = read12VDCbus();
     
     SelectPZEM_v2(i);
     
@@ -1118,6 +1153,10 @@ void FillNowValuesAndRegisters()
 
     if (isnan(tmpval)) {voltage = 0;} // NaN despite retries.
     NowValues[0 + i] = voltage;
+    ret = ModbusRTUServer.holdingRegisterWrite(80 + i,NowValues[0 + i]);
+
+    if (isLowPowerMode) {continue;} // Don't bother getting the remaining metrics if there is a power outage / DC Bus malfunction
+    // This is done in order to limit UART current drain by the PZEM optocouplers, together with time throttling.
     
     for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
     {
@@ -1130,6 +1169,7 @@ void FillNowValuesAndRegisters()
 
     if (isnan(tmpval)) {current = 0;} // NaN despite retries.
     NowValues[3 + i] = current;
+    ret = ModbusRTUServer.holdingRegisterWrite(83 + i,NowValues[3 + i]);
     
     for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
     {
@@ -1143,6 +1183,7 @@ void FillNowValuesAndRegisters()
 
     if (isnan(tmpval)) {power = 0;} // NaN despite retries.
     NowValues[6 + i] = power;
+    ret = ModbusRTUServer.holdingRegisterWrite(86 + i,NowValues[6 + i]);
     
     
     for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
@@ -1156,6 +1197,7 @@ void FillNowValuesAndRegisters()
 
     if (isnan(tmpval)) {frequency = 0;} // NaN despite retries.
     NowValues[9 + i] = frequency;
+    ret = ModbusRTUServer.holdingRegisterWrite(92 + i,NowValues[9 + i]);
     
     for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
     {
@@ -1168,6 +1210,7 @@ void FillNowValuesAndRegisters()
 
     if (isnan(tmpval)) {pf = 0;} // NaN despite retries.
     NowValues[12 + i] = pf;
+    ret = ModbusRTUServer.holdingRegisterWrite(95 + i,NowValues[12 + i]);
     
     for(uint8_t retry = 0; retry < maxPZEMRetries; retry++)
     {
@@ -1180,6 +1223,7 @@ void FillNowValuesAndRegisters()
 
     if (isnan(tmpval)) {energy = 0;} // NaN despite retries.
     NowValues[15 + i] = energy;  
+    ret = ModbusRTUServer.holdingRegisterWrite(89 + i,NowValues[15 + i]);
     
 
     // TODO : overflow management. (like boost narrow-cast) or using pow(2,sizeof(uint_16t)*8) and <template>
@@ -1194,57 +1238,7 @@ void FillNowValuesAndRegisters()
 
     // TODO : isochronous sampling. compensate processing delay and remove it from PZEM polling delay.
      
-
     
-    ret = ModbusRTUServer.holdingRegisterWrite(78,DCBusVoltage[0]); // 5V DC Bus Voltage in mV
-    ret = ModbusRTUServer.holdingRegisterWrite(79,DCBusVoltage[1]); // 12 DC Bus Voltage in mV
-    
-    
-
-    //memcpy(VoltageModbusRegister, &(NowValues[0 + i]), sizeof(VoltageModbusRegister));
-
-    ret = ModbusRTUServer.holdingRegisterWrite(80 + i,NowValues[0 + i]);
-    
-    //ret = ModbusRTUServer.holdingRegisterWrite(80 + 2*i,VoltageModbusRegister[0]);
-    //ret = ModbusRTUServer.holdingRegisterWrite(81 + 2*i,VoltageModbusRegister[1]);
-
-      
-    //memcpy(CurrentModbusRegister, &(NowValues[3 + i]), sizeof(CurrentModbusRegister));
-
-    ret = ModbusRTUServer.holdingRegisterWrite(83 + i,NowValues[3 + i]);
-
-    //ret = ModbusRTUServer.holdingRegisterWrite(86 + 2*i,CurrentModbusRegister[0]);
-    //ret = ModbusRTUServer.holdingRegisterWrite(87 + 2*i,CurrentModbusRegister[1]);
-
-    //memcpy(PowerModbusRegister, &(NowValues[6 + i]), sizeof(PowerModbusRegister));
-
-    ret = ModbusRTUServer.holdingRegisterWrite(86 + i,NowValues[6 +i]);
-    
-    //ret = ModbusRTUServer.holdingRegisterWrite(92 + 2*i,PowerModbusRegister[0]);
-    //ret = ModbusRTUServer.holdingRegisterWrite(93 + 2*i,PowerModbusRegister[1]);  
-  
-
-    //memcpy(FrequencyModbusRegister, &(NowValues[9 + i]), sizeof(FrequencyModbusRegister));
-
-    ret = ModbusRTUServer.holdingRegisterWrite(92 + i,NowValues[9 + i]);
-
-    //ret = ModbusRTUServer.holdingRegisterWrite(104 + 2*i,FrequencyModbusRegister[0]);
-    //ret = ModbusRTUServer.holdingRegisterWrite(105 + 2*i,FrequencyModbusRegister[1]);
-   
-
-    //memcpy(PowerFactorModbusRegister, &(NowValues[12 + i]), sizeof(PowerFactorModbusRegister));
-    
-    ret = ModbusRTUServer.holdingRegisterWrite(95 + i,NowValues[12 + i]);
-    
-    //ret = ModbusRTUServer.holdingRegisterWrite(110 + 2*i,PowerFactorModbusRegister[0]);
-    //ret = ModbusRTUServer.holdingRegisterWrite(111 + 2*i,PowerFactorModbusRegister[1]);
-
-    //memcpy(EnergyModbusRegister, &(NowValues[15 + i]), sizeof(EnergyModbusRegister));
-
-    ret = ModbusRTUServer.holdingRegisterWrite(89 + i,NowValues[15 + i]);
-    
-    //ret = ModbusRTUServer.holdingRegisterWrite(98 + 2*i,EnergyModbusRegister[0]);
-    //ret = ModbusRTUServer.holdingRegisterWrite(99 + 2*i,EnergyModbusRegister[1]);
     
   }
     
@@ -2379,11 +2373,16 @@ void loop()
     }
   }
 
+  FillDCBusNowValuesAndRegisters();
   FillNowValuesAndRegisters();
-  FillAverageValuesRegisters();
-  ProcessFormulas();
-  PrintNowValues(2);
-
+  
+  if (!isLowPowerMode)
+  {
+    FillAverageValuesRegisters();
+    ProcessFormulas();
+    PrintNowValues(2);
+  }
+  
   if((DCBusVoltage[0] < DCBus5VLowVoltageThr) & !isDCBus5VLowVoltage) // prevent spamming the EEPROM event log.
   {
     logEventToEEPROM(14,DCBusVoltage[0]);
