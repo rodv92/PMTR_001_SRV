@@ -1,3 +1,9 @@
+// VERSIONING
+
+#define VERSIONMAJOR 1
+#define VERSIONMINOR 0
+#define VERSIONBUILD 4
+
 //CREDITS / INCLUDES
 
 #include <ArduinoRS485.h> // ArduinoModbus depends on the ArduinoRS485 library
