@@ -2,7 +2,7 @@
 
 #define VERSIONMAJOR 1
 #define VERSIONMINOR 0
-#define VERSIONBUILD 4
+#define VERSIONBUILD 10
 
 //CREDITS / INCLUDES
 
@@ -198,7 +198,12 @@ const int numHoldingRegisters = 111;
 
 const int numInputRegisters = 2;
 
-void(* resetFunc) (void) = 0; 
+void resetFunc() 
+{
+  wdt_disable();
+  wdt_enable(WDTO_15MS); // 15 ms watchdog 
+  while(true); // infinite loop without feeding the dog, should reset in 15ms
+}
 
 String GetStringFromId(uint16_t stringId)
 {
@@ -1501,7 +1506,10 @@ void CPL_line_test(uint8_t test_seconds)
 uint16_t GetLastEventAddrFromEEPROM()
 {
 
-    for (uint16_t i = 12 ; i < EEPROM.length() ; i+=16) 
+    // ensures we reserve the last 16 bytes of EEPROM for other purposes than event log
+    uint16_t EEPROMLogCeilingAddr = EEPROM.length() - 16;
+
+    for (uint16_t i = 12 ; i < EEPROMLogCeilingAddr ; i+=16) 
     {
       if (EEPROM.read(i) == MAX_COUNT_8BIT) 
       {
@@ -1514,6 +1522,10 @@ uint16_t GetLastEventAddrFromEEPROM()
 
 int8_t WriteFrameToEEPROM(uint16_t addr, uint8_t frame[16])
 {
+
+  // ensures we reserve the last 16 bytes of EEPROM for other purposes than event log
+  uint16_t EEPROMLogCeilingAddr = EEPROM.length() - 16;
+
   // addr is frame base address (address of first byte of frame)
   if ((addr % 16) != 0) {return -1;} // wrong address. frame addr must be aligned.
   if(frame[12] != MAX_COUNT_8BIT) {return -2;} // wrong endMarker data
@@ -1526,15 +1538,27 @@ int8_t WriteFrameToEEPROM(uint16_t addr, uint8_t frame[16])
     EEPROM.update(addr + i,frame[i]);
   }
 
-  EEPROM.update((addr - 4 + EEPROM.length()) % EEPROM.length(),0); // resets previous last event marker.
+  //EEPROM.update((addr - 4 + EEPROM.length()) % EEPROM.length(),0); // resets previous last event marker.
+  EEPROM.update((addr - 4 + EEPROMLogCeilingAddr) % EEPROMLogCeilingAddr,0); // resets previous last event marker.
+  
   return 0;
 
 }
 
 void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
 {
-  uint16_t writeAddr = 0; // frame base address we will write to.
+  
+  
+    //DebugPrint(F("\n10:LogEndMarkerAddr\t"),0);
+    //DebugPrint(String(LogEndMarkerAddr),0);
+    //DebugPrint(F("\n"),0);
+  
+  
+  // ensures we reserve the last 16 bytes of EEPROM for other purposes than event log
+  uint16_t EEPROMLogCeilingAddr = EEPROM.length() - 16;
 
+  uint16_t writeAddr = 0; // frame base address we will write to.
+  
   if(LogEndMarkerAddr == 0)
   {
     //LogEndMarkerAddr initialized at 0 (recent reset?). we have to search for last event in EEPROM and also restore globalEventCounter.
@@ -1549,11 +1573,11 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
     else
     {
       EEPROM.get(LogEndMarkerAddr +1,globalEventCounter);
-      DebugPrint("LogEndMarkerAddr\tglobalEventCounter:\n",0);
-      DebugPrint(String(LogEndMarkerAddr),0);
-      DebugPrint("\t",0);
-      DebugPrint(String(globalEventCounter),0);
-      DebugPrint("\n",0);   
+      //DebugPrint("LogEndMarkerAddr\tglobalEventCounter:\n",0);
+      //DebugPrint(String(LogEndMarkerAddr),0);
+      //DebugPrint("\t",0);
+      //DebugPrint(String(globalEventCounter),0);
+      //DebugPrint("\n",0);   
     }
   }
 
@@ -1599,7 +1623,15 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
   
   if(LogEndMarkerAddr !=0) 
   {
-    writeAddr = (LogEndMarkerAddr+4)%EEPROM.length();
+    //writeAddr = (LogEndMarkerAddr+4)%EEPROM.length();
+    //DebugPrint(F("\nLogEndMarkerAddr\t"),0);
+    //DebugPrint(String(LogEndMarkerAddr),0);
+    //DebugPrint(F("\n"),0);
+  
+    writeAddr = (LogEndMarkerAddr+4)%EEPROMLogCeilingAddr;
+    //DebugPrint(F("\nwriteaddr\t"),0);
+    //DebugPrint(String(writeAddr),0);
+    //DebugPrint(F("\n"),0);
   }
   else
   {
@@ -1609,7 +1641,8 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
   int8_t ret = WriteFrameToEEPROM(writeAddr,frame);
   if(!ret) 
   {
-    LogEndMarkerAddr = (LogEndMarkerAddr+16)%EEPROM.length();
+    //LogEndMarkerAddr = (LogEndMarkerAddr+16)%EEPROM.length();
+    LogEndMarkerAddr = (LogEndMarkerAddr+16)%EEPROMLogCeilingAddr;
   } // Update End of log marker if write successful.
   else
   {
@@ -1622,11 +1655,16 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
 
 uint16_t clearEEPROM(bool HardErase)
 {
-    // HardErase also reset global event counter (if data on EEPROM is not trusted / or need to reset the counter)
+    // HardErase also reset global event counter (if data on EEPROM is not trusted / or need to reset the counter). It also erases EEPROM reserved space.
     // SoftErase does not resets the globalEventCounter, and logs that EEPROM was erased to the EEPROM as the first event.
+
+    // ensures we don't clear the last 16 bytes of EEPROM when soft erasing
+    uint16_t EEPROMLogCeilingAddr = EEPROM.length() - 16;
+
+
     if(!HardErase)
     {
-      uint16_t LogEndMarkerAddr = GetLastEventAddrFromEEPROM();
+      LogEndMarkerAddr = GetLastEventAddrFromEEPROM();
       if(LogEndMarkerAddr != 0)
       {
         EEPROM.get(LogEndMarkerAddr + 1,globalEventCounter);
@@ -1635,21 +1673,38 @@ uint16_t clearEEPROM(bool HardErase)
       {
         globalEventCounter = 0;
       }
-      logEventToEEPROM(17,0);
+
+      // now we can clear the EEPROM, except the 16 last bytes.
+      for (uint16_t i = 0 ; i < EEPROMLogCeilingAddr ; i++) 
+      {
+        EEPROM.update(i, 0);
+        wdt_reset();
+      }
+    
+      //LogEndMarkerAddr = EEPROM.length() - 4; // ensures next log write is at base address 0.
+      LogEndMarkerAddr = EEPROMLogCeilingAddr - 4; // ensures next log write is at base address 0.
+
+      //DebugPrint(F("\nLogEndMarkerAddr\t"),0);
+      //DebugPrint(String(LogEndMarkerAddr),0);
+      //DebugPrint(F("\n"),0);
+
+      logEventToEEPROM(17,0); // logs that the EEPROM was soft erased
     }
-    else
+    else // hard erase
     {
       globalEventCounter = 0;
-    }
+
+      // we can clear the whole EEPROM
+      for (uint16_t i = 0 ; i < EEPROM.length() ; i++) 
+      {
+        EEPROM.write(i, 0);
+        wdt_reset();
+      }
+      
+      LogEndMarkerAddr = EEPROMLogCeilingAddr - 4; // ensures next log write is at base address 0.
     
-
-    // usually called by backend or from serial debug to clear all events stored in the EEPROM
-    for (uint16_t i = 0 ; i < EEPROM.length() ; i++) 
-    {
-      EEPROM.write(i, 0);
-    }
-    LogEndMarkerAddr = EEPROM.length() - 4; // ensures next log write is at base address 0.
-
+    }    
+    
 }
 
 void DumpEEPROM()
@@ -1671,6 +1726,11 @@ int16_t DumpEventLog()
 {
 
   DebugPrint("\n",0);
+
+
+  // ensures we reserve the last 16 bytes of EEPROM for other purposes than event log
+  uint16_t EEPROMLogCeilingAddr = EEPROM.length() - 16;
+
   bool HasLogCycled = true;
 
   if(LogEndMarkerAddr == 0)
@@ -1679,19 +1739,24 @@ int16_t DumpEventLog()
     if(LogEndMarkerAddr == 0) {DebugPrint(F("Log is empty.\n"),0);return 0;}  
   }
 
-  DebugPrint("DumpEventLog: LogEndMarkerAddr baseAddr\n",0);
-  DebugPrint(String(LogEndMarkerAddr),0);
-  DebugPrint("\t",0);
+  //DebugPrint("DumpEventLog: LogEndMarkerAddr baseAddr\n",0);
+  //DebugPrint(String(LogEndMarkerAddr),0);
+  //DebugPrint("\t",0);
 
   
-  uint16_t baseAddr = (LogEndMarkerAddr + 4) % EEPROM.length();
+  //uint16_t baseAddr = (LogEndMarkerAddr + 4) % EEPROM.length();
+  uint16_t baseAddr = (LogEndMarkerAddr + 4) % EEPROMLogCeilingAddr;
   
-  DebugPrint(String(baseAddr),0);
-  DebugPrint("\n",0);
+
+  //DebugPrint(String(baseAddr),0);
+  //DebugPrint("\n",0);
   
-  for(uint16_t i=baseAddr;i<baseAddr+EEPROM.length();i+=16)
+  //for(uint16_t i=baseAddr;i<baseAddr+EEPROM.length();i+=16)
+  for(uint16_t i=baseAddr;i<baseAddr+EEPROMLogCeilingAddr;i+=16)
+  
   {
-    uint16_t realindex = i % EEPROM.length();
+    //uint16_t realindex = i % EEPROM.length();
+    uint16_t realindex = i % EEPROMLogCeilingAddr;
     uint32_t epoch = 0;
     uint16_t eventcode = MAX_COUNT_16BIT;
     uint16_t eventdata = MAX_COUNT_16BIT;
@@ -2168,26 +2233,25 @@ void PrintCurrentTime(uint8_t DebugLevel)
 
 void processCommand()
 {
-  
-  // get now values
   String strreceivedchars =  String(receivedChars);
-  // gnv = get now values, print currently stored PZEM values for all phases, that were fetched by FillNowValuesAndRegisters()
   if (!(strcmp(receivedChars , "gnv")))
-  {
-    
+  { 
+    // gnv = get now values, print currently stored PZEM values for all phases, that were fetched by FillNowValuesAndRegisters()
     PrintNowValues(0);
   }
   else if (!(strcmp(receivedChars , "gav")))
-  {
-    
+  { 
+    // gav = get average values, print calaculated Moving Average Values for all phases.
     PrintAvgValues(0);
   }
   else if (!(strcmp(receivedChars , "dcb")))
   {
+    // dcb = dump circular buffer. raw printout of Circular buffer used in Moving Average calculation for all phases.
     DumpCircularBuffer(0);
   }
   else if (!(strcmp(receivedChars , "dl")))
   {
+    // dl = dump log. Dumps event log stored in EEPROM in a readable format
     int16_t ret = 0;
     ret = DumpEventLog();
   }
@@ -2196,7 +2260,25 @@ void processCommand()
     int16_t ret = 0;
     DumpEEPROM();
   }
-  
+  else if (!(strcmp(receivedChars , "ese")))
+  {
+    DebugPrint(F("\ninitiating EEPROM Soft erase\n"),0);
+    clearEEPROM(false);
+    DebugPrint(F("Done.\n"),0);
+  }
+  else if (!(strcmp(receivedChars , "ehe")))
+  {
+    DebugPrint(F("\ninitiating EEPROM Hard erase\n"),0);
+    clearEEPROM(true);
+    DebugPrint(F("Done.\n"),0);
+  }  
+
+  else if (!(strcmp(receivedChars , "rst")))
+  {
+    // initiate MCU reset from debug command shell
+    logEventToEEPROM(2,0);
+    resetFunc();
+  }
   
   // resets PZEM energy counters for the specified phases as a binary flag representation. little endian. 
   // ex: rste 001 : resets L1 energy counter, rste 110 : resets L2 and L3 energy counters.
@@ -2225,17 +2307,15 @@ void processCommand()
     DebugPrint(F("starting CPL Line test."),0);
     //pinMode(22,OUTPUT);
     //digitalWrite(22,HIGH);
-    CPL_line_test(30);
+    CPL_line_test(30); //CPL Line test for 30 seconds.
     //digitalWrite(22,LOW);
-    DebugPrint(F("end CPL Line test."),0);
-    
+    DebugPrint(F("end CPL Line test."),0);  
   }
   else
   {
     DebugPrint(F("Invalid command"),0);
   }
   
-
 }
 
 
