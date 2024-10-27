@@ -51,6 +51,7 @@ Protection formula :
 - Harden and test formula actions where conflicting pins are used with different actions.
 - Prevent use of reserved pins. DONE!
 - Add interlock (local/remote) code.
+- Add pin toggle timing delays.
 
 General debugging :
 - Add EEPROM event logging. DONE!
