@@ -51,7 +51,7 @@ uint16_t DCBus12VLowVoltageRecThr =  11200; // 12 DC Bys Low Voltage Recovery Th
 bool isDCBus5VLowVoltage = false;
 bool isDCBus12VLowVoltage = false;
 bool isLowPowerMode = false;
-
+bool isLocalControl = false; // safety interlock to disable remote manipulation for testing (should be toggled through key/cam switch)
 
 ISR_Timer ISR_timer;
 DS3231 myRTC;
@@ -62,6 +62,17 @@ DS3231 myRTC;
 #define ADG333A_IN2_PIN 33
 #define ADG333A_IN3_PIN 34
 #define ADG333A_IN4_PIN 35
+
+#define ADDRESS_PIN_SUPPLY 36
+#define ADDRESS_PIN_0 37
+#define ADDRESS_PIN_1 38
+#define ADDRESS_PIN_2 39
+#define ADDRESS_PIN_3 40
+#define ADDRESS_PIN_4 41
+#define ADDRESS_PIN_5 42
+#define ADDRESS_PIN_6 43
+#define ADDRESS_PIN_7 44
+
 
 // Analog Pin for 12V DC Bus Voltage Read
 #define DCBUS12V_PIN A15
@@ -1376,7 +1387,18 @@ void ProcessFormulas()
         tmppin = DigitalPinsList[pinindex];
         DigitalPinsList[pinindex] = DigitalPinsList[pinindex+1];
         DigitalPinsList[pinindex+1] = tmppin;
-      }
+      } // dirty fix for getting back correctly ordered pin list
+
+      // We should now check that there are no reserved pins in the pinlist.
+
+      for(uint8_t pinindex = 0; pinindex < 8; pinindex++)
+      {
+
+        uint8_t tmppin;   
+        tmppin = DigitalPinsList[pinindex];
+
+      } 
+
 
       memcpy(&(TripFormulaDataStructptr[indexptr]->DigitalPinsList), &DigitalPinsList, sizeof(DigitalPinsList));
   
@@ -1900,8 +1922,8 @@ if (linetest)
 }
 
   // GetDeviceAddress first argument is array of pin from lsb to msb, second argument is the pin supplying digital high voltage
-  uint8_t DeviceAddressPins[8] = {37,38,39,40,41,42,43,44};
-  DeviceAddress = GetDeviceAddress(DeviceAddressPins,36);
+  uint8_t DeviceAddressPins[8] = {ADDRESS_PIN_0,ADDRESS_PIN_1,ADDRESS_PIN_2,ADDRESS_PIN_3,ADDRESS_PIN_4,ADDRESS_PIN_5,ADDRESS_PIN_6,ADDRESS_PIN_7};
+  DeviceAddress = GetDeviceAddress(DeviceAddressPins,ADDRESS_PIN_SUPPLY);
   DebugPrint(F("setup: DeviceAddress:\t"),0);
   DebugPrint(String(DeviceAddress),0);
   DebugPrint(F("\n"),0);

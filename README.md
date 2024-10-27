@@ -6,6 +6,10 @@
 Description
 ----
 PMTR (Power Meter, Telemetry & Relay) is an open source project that allows precise monitoring of mains parameters (voltage, current, active power, energy, power factor and frequency) and allows to act on external relays based on formula triggers (ex: overcurrent or overvoltage)
+
+This type of device is known in the Electrical industry as an IED (Intelligent Electronic Device) or simply as a protection relay.
+
+
 It is a client/server project with a Web interface for data display, logging and device configuration.
 It uses power line communication and the industrial proved Modbus protocol to transfer data between the client and servers; no need to have ethernet or wifi at your main power panel.
 
@@ -29,16 +33,33 @@ Current State of the project.
 
 A single phase proof of concept with a raspberry pi client and a single phase power meter was done and shows good results. The server code integrate formula based actions, and time synchronization. A basic web chart of power parameters and logging into a MariaDB database is part of this POC.
 
-What needs to be done in priority as of November 2022:
+What needs to be done in priority as of October 2024:
 
-- Finish the 3 phase prototype server, currently designed with Easy-EDA pro.
-    - Add ADG333 switching of serial line to query each PZEM-004t V3 modules.
-- Add code for DS3231 time keeping.
+
+Hardware :
+- Finish the 3 phase prototype server, currently designed with Easy-EDA pro. DONE!
+    - Add ADG333 switching of serial line to query each PZEM-004t V3 modules. DONE!
+- Add code for DS3231 time keeping. DONE!
+- Add supercapacitor bank to handle short time power loss events (max 60s with all subcomponents on, with a 5F * 6 supercapacitor bank). DONE!
+- Add DC bus (5V/12V) voltage monitoring. DONE!
+- Add interlock (local/remote) key switch
+- Add LCD screen / keypad.
+- Keep in touch with PeaceFair, the maker of the PZEM-004t V3.0 to make a hardened 400V module (there are still some issues regarding with high voltage tolerance)
+
+
+Protection formula :
 - Harden and test formula actions where conflicting pins are used with different actions.
-- Make the raspberry pi (wifi, serial) configuration seamless
+- Prevent use of reserved pins. DONE!
+- Add interlock (local/remote) code.
+
+General debugging :
+- Add EEPROM event logging. DONE!
+
+Modbus client :
+- Make the raspberry pi (Modbus Client) (wifi, serial) configuration seamless
 - Expand the raspberry pi client to query several servers with auto-detection on the PLC bus 
 - Add a MQTT layer on the raspberry pi for upstream telemetry reporting
-- keep in touch with PeaceFair, the maker of the PZEM-004t V3.0 to make a hardened 400V module (there are still some issues regarding with high voltage tolerance)
+
 
 ----
 projected INSTALLATION and SETUP of the 3 phase prototype :
