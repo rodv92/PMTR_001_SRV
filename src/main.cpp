@@ -2,7 +2,7 @@
 
 #define VERSIONMAJOR 1
 #define VERSIONMINOR 0
-#define VERSIONBUILD 10
+#define VERSIONBUILD 27
 
 //CREDITS / INCLUDES
 
@@ -31,8 +31,11 @@
 #include <SimpleTimer.h>              // https://github.com/schinken/SimpleTimer
 
 
+#define TOGGLE 0x2
+
 uint8_t DebugLevel = 0;
 bool Anyerror = false;
+bool PinsListError = false;
 uint8_t maxPZEMRetries = 3;
 uint16_t PZEMRetries = 0;
 uint16_t PZEMReads = 0;
@@ -73,6 +76,23 @@ DS3231 myRTC;
 #define ADDRESS_PIN_6 43
 #define ADDRESS_PIN_7 44
 
+// Add these pins to reserved pin list (forbiden use in formulas)
+uint8_t ReservedPinList[13] = 
+{
+ ADG333A_IN1_PIN, 
+ ADG333A_IN2_PIN, 
+ ADG333A_IN3_PIN, 
+ ADG333A_IN4_PIN, 
+ ADDRESS_PIN_SUPPLY,
+ ADDRESS_PIN_0, 
+ ADDRESS_PIN_1, 
+ ADDRESS_PIN_2, 
+ ADDRESS_PIN_3,
+ ADDRESS_PIN_4,
+ ADDRESS_PIN_5,
+ ADDRESS_PIN_6,
+ ADDRESS_PIN_7
+};
 
 // Analog Pin for 12V DC Bus Voltage Read
 #define DCBUS12V_PIN A15
@@ -148,17 +168,33 @@ struct CircularBufferValuesStruct
 volatile CircularBufferValuesStruct myCircularBufferValuesStruct;
 
 
+
 //volatile MovingAveragesStruct myMovingAveragesStruct = { 10, {0.0,0.0,0.0,0.0,0.0,0.0}, {0.0,0.0,0.0,0.0,0.0} };
 int MovingAveragesTimerNumber;
 
+struct PinTripModeField
+{
+  uint8_t Pin0Mode : 2;
+  uint8_t Pin1Mode : 2;
+  uint8_t Pin2Mode : 2;
+  uint8_t Pin3Mode : 2;
+  uint8_t Pin4Mode : 2;
+  uint8_t Pin5Mode : 2;
+  uint8_t Pin6Mode : 2;
+  uint8_t Pin7Mode : 2;
+  
+};
+
 struct TripFormulaData
 {
-  bool HighOrLowOnFormulaTrue = HIGH;
+  //bool HighOrLowOnFormulaTrue = HIGH;
   bool FormulaDryRun = true;
   bool IsTripped = false;
   bool isTripRecoveryStrategyAuto = false; //false = Manual, true = Auto
   uint8_t MAWindowSeconds = 0; //0 marks trip slot as unused
   uint8_t DigitalPinsList[8];
+  uint16_t PinTripDelayMillis[7];
+  PinTripModeField PinTripMode;
   uint32_t TripRecoveryDurationSeconds; // after how many seconds after condition is cleared we can recover
   uint32_t CurrentTripRecoveryDurationSeconds; // how many seconds have passed since condition is cleared
   char FormulaChars[64];
@@ -171,6 +207,7 @@ volatile TripFormulaData myTripFormulaData_3;
 volatile TripFormulaData myTripFormulaData_4;
 
 volatile TripFormulaData *TripFormulaDataStructptr[5] = {&myTripFormulaData_0,&myTripFormulaData_1,&myTripFormulaData_2,&myTripFormulaData_3,&myTripFormulaData_4};
+
 
 
 const int numCoils = 12;
@@ -186,25 +223,54 @@ const int numCoils = 12;
 
 const int numDiscreteInputs = 12;
 //const int numHoldingRegisters = 28;
-const int numHoldingRegisters = 111;
+const int numHoldingRegisters = 120;
 
 
 // HOLDING REGISTERS FOR TELEMETRY :
-// holding register 0 to 35 : most recent telemetry
-// holding register 36 to 65 : Moving average telemetry for processing by client purposes
+
+// holding register 78 : 5V DC Bus voltage
+// holding register 79 : 12V DC Bus voltage
+// holding register 80 to 97 : most recent telemetry
+// holding register 98 to 112 : Moving average telemetry for processing by client purposes
+
+// HOLDING REGISTERS - RESERVED :
+// holding registers 113 to 145 : reserved
 
 // HOLDING REGISTERS FOR TIME SYNCHRONISATION
-// holding registers 66,67,68,69 : epoch seconds in 64 bit format (Y2K38 compliant)
-// holding register 70 : milliseconds to add to epoch seconds. valid integer values 0 to 999
+// holding registers 146,147,148,149 : epoch seconds in 64 bit format (Y2K38 compliant)
+// holding register 150 : milliseconds to add to epoch seconds. valid integer values 0 to 999
 
 // HOLDING REGISTERS FOR TRIP FORMULAS UPDATE
-// holding register 71 LSB : MA Window in seconds to use for formula evaluation of variables. all variables in the same formula
+// holding register 151 LSB : MA Window in seconds to use for formula evaluation of variables. all variables in the same formula
 // are evaluated using the same MA Windows
-// holding register 71 MSB : Formula Slot that is being updated
-// holding register 72 to 79 : list of pins to trip. each register holds 2 list items (8 bit pin ID). max number of pins : 8
-// holding register 80 : trip recovery hysteresis time : duration in seconds condition must remain clear before
+// holding register 151 MSB : Formula Slot that is being updated
+// holding register 152 to 155 : list of pins to trip. each register holds 2 list items (8 bit pin ID). max number of pins : 8
+
+// holding register 156  : pin trip type for the 8 pins packed into one register : two bits for each pin.
+// little endian (for bit, byte and word order).
+// 00 = trip to LOW
+// 01 = trip to HIGH
+// 10 = toggle
+
+// ex : pin indexes       : 7   6   5   4   3   2   1   0
+//      pin IDs           : 27  26  22  20  19  17  15  14
+
+//      pin trip register : 156 156 156 156 156 156 156 156
+//    : pin trip mode     : 00  00  01  01  10  10  00  10 
+
+// holding registers 157 to 164 : pin trip delay in ms before tripping next pin index. 1 register per delay in ms (2 bytes per delay, max delay 65535 ms)
+// little endian.
+// ex : register 158 is delay between trip of pin index 0 and pin index 1, register 159 delay between pin index 1 and 2. etc.
+
+// holding register 165 : trip recovery hysteresis time : duration in seconds condition must remain clear before
 // pin(s) reactivation if AUTO MODE.
-// holding registers 81 to 144 : formula string
+// holding registers 166 to 197 : formula string, 32 registers to hold 64 chars max, including \0
+  // convert register content to temporary char array
+  // compile and evaluate : if ok
+  // write it to flash, use 4K for each formula
+
+  // if no formula update : read sequentially each formula from flash, compile and evaluate.
+  // generate action on pins.
 
 
 const int numInputRegisters = 2;
@@ -215,6 +281,7 @@ void resetFunc()
   wdt_enable(WDTO_15MS); // 15 ms watchdog 
   while(true); // infinite loop without feeding the dog, should reset in 15ms
 }
+
 
 String GetStringFromId(uint16_t stringId)
 {
@@ -256,12 +323,17 @@ String GetStringFromId(uint16_t stringId)
       return String(F("5V DC Bus voltage recovered"));
     case 17:
       return String(F("EEPROM cleared"));
-    
+    case 18:
+      return String(F("Prohibited use of reserved digital pin in toggle pin list!"));
+    case 19:
+      return String(F("Prohibited use of reserved digital pin in toggle pin list - error cleared"));   
     default:
       return String(F("Unknown event code"));
        
   }
 }
+
+
 
 
 void enableLowPowerMode()
@@ -612,7 +684,7 @@ void FillAverageValuesRegisters()
       //ret = ModbusRTUServer.holdingRegisterWrite(135 + 2*i,AvgFrequencyModbusRegister[1]);
         
       //pf Avg
-      ret = ModbusRTUServer.holdingRegisterWrite(110 + 2*i,static_cast <uint16_t>(myMovingAveragesStructV2_0.MovingAverageValues[12 + i]));
+      ret = ModbusRTUServer.holdingRegisterWrite(110 + i,static_cast <uint16_t>(myMovingAveragesStructV2_0.MovingAverageValues[12 + i]));
       
       //ret = ModbusRTUServer.holdingRegisterWrite(140 + 2*i,AvgPowerFactorModbusRegister[0]);
       //ret = ModbusRTUServer.holdingRegisterWrite(141 + 2*i,AvgPowerFactorModbusRegister[1]);
@@ -1267,264 +1339,6 @@ void FillNowValuesAndRegisters()
     
 }
 
-void ProcessFormulas()
-{
-
-  // COILS FOR TRIP FORMULAS UPDATE
-
-  // coil 1 : formula update requested by client
-  // coil 2 : formula digitalwrite HIGH or LOW on formula evaluation returning true
-  // coil 3 : formula DRY RUN : does not effect pin status, only reports it (see pin statuses coils)
-  // coil 4 : trip recovery strategy, MANUAL or AUTO on condition clear
-
-
-// HOLDING REGISTERS FOR TELEMETRY :
-// holding register 80 to 115 : most recent telemetry
-// holding register 116 to 145 : Moving average telemetry for processing by client purposes
-
-// HOLDING REGISTERS FOR TIME SYNCHRONISATION
-// holding registers 146,147,148,149 : epoch seconds in 64 bit format (Y2K38 compliant)
-// holding register 150 : milliseconds to add to epoch seconds. valid integer values 0 to 999
-
-// HOLDING REGISTERS FOR TRIP FORMULAS UPDATE
-// holding register 151 LSB : MA Window in seconds to use for formula evaluation of variables. all variables in the same formula
-// are evaluated using the same MA Windows
-// holding register 151 MSB : Formula Slot that is being updated
-// holding register 152 to 155 : list of pins to trip. each register holds 2 list items (8 bit pin ID). max number of pins : 8
-// holding register 156 : trip recovery hysteresis time : duration in seconds condition must remain clear before
-// pin(s) reactivation if AUTO MODE.
-// holding registers 157 to 188 : formula string, 32 register to hold 64 chars max, including \0
-  // convert register content to temporary char array
-  // compile and evaluate : if ok
-  // write it to flash, use 4K for each formula
-
-  // if no formula update : read sequentially each formula from flash, compile and evaluate.
-  // generate action on pins.
-
-  if(ModbusRTUServer.coilRead(1) == 1)
-  {
-    uint16_t FormulaDataBaseAddress = 151;
-    DebugPrint(F("ProcessFormulas: FORMULA UPDATE: indexptr:\t"),5);
-    uint16_t MAWindowAndFormulaSlot;
-    uint8_t MAWindowAndFormulaSlotArray[2];
-    uint8_t indexptr;
-    ISR_timer.disable(MovingAveragesTimerNumber);
-    MAWindowAndFormulaSlot = ModbusRTUServer.holdingRegisterRead(FormulaDataBaseAddress);
-    memcpy(&MAWindowAndFormulaSlotArray,&MAWindowAndFormulaSlot,sizeof(MAWindowAndFormulaSlot));
-    indexptr = MAWindowAndFormulaSlotArray[0];
-    
-    DebugPrint(String(indexptr),5);
-    DebugPrint(F("\n"),5);
-
-    if (indexptr < 5)
-    {
-
-      TripFormulaDataStructptr[indexptr]->MAWindowSeconds = constrain(MAWindowAndFormulaSlotArray[1],1,nbvalues);
-      TripFormulaDataStructptr[indexptr]->HighOrLowOnFormulaTrue = ModbusRTUServer.coilRead(2);
-      DebugPrint(F("ProcessFormulas: MAWindowSeconds HighOrLowOnFormulaTrue FormulaChars DryRun isTripRecoveryStrategyAuto TripRecoveryDuration PinsList:\t"),5);
-      DebugPrint(String(TripFormulaDataStructptr[indexptr]->MAWindowSeconds),5);
-      DebugPrint(F("\t"),5);
-      
-      DebugPrint(String(TripFormulaDataStructptr[indexptr]->HighOrLowOnFormulaTrue),5);
-      DebugPrint(F("\t"),5);
-      
-
-      char FormulaChars[64];
-      uint16_t FormulaCharsRegisters[32];
-      for(uint8_t indexcharregister = 0; indexcharregister < 32; indexcharregister++)
-      {
-        FormulaCharsRegisters[indexcharregister] = ModbusRTUServer.holdingRegisterRead(FormulaDataBaseAddress + 6 + indexcharregister);
-      }
-
-      memcpy(&FormulaChars,&FormulaCharsRegisters,sizeof(FormulaChars));
-      
-      for(uint8_t charindex = 0; charindex < 64; charindex += 2)
-      {
-        char tmpchar;
-        tmpchar = FormulaChars[charindex];
-        FormulaChars[charindex] = FormulaChars[charindex+1];
-        FormulaChars[charindex+1] = tmpchar;
-      }
-
-      memcpy(&(TripFormulaDataStructptr[indexptr]->FormulaChars),&FormulaChars,sizeof(FormulaChars));
-      //TripFormulaDataStructptr[indexptr]->FormulaChars = FormulaChars;
-
-
-      DebugPrint(String(FormulaChars),5);
-      DebugPrint(F("\t"),5);
-    
-
-
-      TripFormulaDataStructptr[indexptr]->FormulaDryRun = ModbusRTUServer.coilRead(3);
-      TripFormulaDataStructptr[indexptr]->isTripRecoveryStrategyAuto = ModbusRTUServer.coilRead(4);
-      TripFormulaDataStructptr[indexptr]->TripRecoveryDurationSeconds = ModbusRTUServer.holdingRegisterRead(FormulaDataBaseAddress + 5);
-      
-      DebugPrint(String(TripFormulaDataStructptr[indexptr]->FormulaDryRun),5);
-      DebugPrint(F("\t"),5);
-    
-      DebugPrint(String(TripFormulaDataStructptr[indexptr]->isTripRecoveryStrategyAuto),5);
-      DebugPrint(F("\t"),5);
-
-      DebugPrint(String(TripFormulaDataStructptr[indexptr]->TripRecoveryDurationSeconds),5);
-      DebugPrint(F("\t"),5);
-    
-
-
-
-      uint8_t DigitalPinsList[8];
-      uint16_t DigitalPinsListRegisters[4];
-
-      for(uint8_t indexpinsregister = 0; indexpinsregister < 4; indexpinsregister++)
-      {
-        DigitalPinsListRegisters[indexpinsregister] = ModbusRTUServer.holdingRegisterRead(FormulaDataBaseAddress + 1 + indexpinsregister);
-      }
-      
-      memcpy(&DigitalPinsList,&DigitalPinsListRegisters,sizeof(DigitalPinsListRegisters));
-    
-      for(uint8_t pinindex = 0; pinindex < 8; pinindex += 2)
-      {
-        uint8_t tmppin;
-        tmppin = DigitalPinsList[pinindex];
-        DigitalPinsList[pinindex] = DigitalPinsList[pinindex+1];
-        DigitalPinsList[pinindex+1] = tmppin;
-      } // dirty fix for getting back correctly ordered pin list
-
-      // We should now check that there are no reserved pins in the pinlist.
-
-      for(uint8_t pinindex = 0; pinindex < 8; pinindex++)
-      {
-
-        uint8_t tmppin;   
-        tmppin = DigitalPinsList[pinindex];
-
-      } 
-
-
-      memcpy(&(TripFormulaDataStructptr[indexptr]->DigitalPinsList), &DigitalPinsList, sizeof(DigitalPinsList));
-  
-
-      
-      for(uint8_t indexpins = 0; indexpins < 8; indexpins++)
-      {
-
-        DebugPrint(String(TripFormulaDataStructptr[indexptr]->DigitalPinsList[indexpins]),5);
-        DebugPrint(F(" "),5);
-    
-      }
-
-      DebugPrint(F("\n"),5);
-    
-    }
-    else
-    {
-      // not a valid formula slot
-      DebugPrint(F("ProcessFormulas: NOT A VALID FORMULA SLOT\n"),5);
-    
-    }
-
-    ModbusRTUServer.coilWrite(1,0);
-    ISR_timer.enable(MovingAveragesTimerNumber);
-    
-  }
-    
-  DebugPrint(F("ProcessFormulas: WILL PARSE FORMULAS\n\n"),5);
-    
-  // parse_formulas
-  for(uint8_t indexptr = 0; indexptr<5; indexptr++)
-  {
-    // check if formula slot is used
-    DebugPrint(F("ProcessFormulas: FORMULA indexptr:\t"),5);
-    DebugPrint(indexptr,5);
-    DebugPrint(F("\n"),5);    
-    
-    if(TripFormulaDataStructptr[indexptr]->MAWindowSeconds != 0)
-    {
-      float result;
-      bool bool_result;
-      DebugPrint(F("ProcessFormulas: THIS FORMULA SLOT IS USED\n"),5);
-      
-      EvalLogicalExpression(TripFormulaDataStructptr[indexptr]->MAWindowSeconds,TripFormulaDataStructptr[indexptr]->FormulaChars,result);
-      bool_result = bool(result);
-
-      if ((bool_result) && !(TripFormulaDataStructptr[indexptr]->FormulaDryRun))
-      {
-        // this is not a drill. toggle pins
-        DebugPrint(F("ProcessFormulas: NOT A DRILL, TOGGLE PINS:\t"),5);
-        TripFormulaDataStructptr[indexptr]->IsTripped = true;
-        // reset current trip recovery duration
-        TripFormulaDataStructptr[indexptr]->CurrentTripRecoveryDurationSeconds = 0;
-          
-        for(uint8_t digitalPinsListIndex = 0; digitalPinsListIndex < 8; digitalPinsListIndex++)
-        {
-          digitalWrite(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],TripFormulaDataStructptr[indexptr]->HighOrLowOnFormulaTrue);
-          DebugPrint(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],5);
-          DebugPrint(F(" "),5);
-          DebugPrint(F("\n"),5);
-        }
-        
-        DebugPrint(F("\n"),5);
-       
-      }
-      else if (!bool_result)
-      {
-        // check if pin has either recovered from trip or was not tripped previously and if we can recover Automatically
-        if ((TripFormulaDataStructptr[indexptr]->IsTripped) && (TripFormulaDataStructptr[indexptr]->isTripRecoveryStrategyAuto))
-        {
-
-          DebugPrint(F("ProcessFormulas: CAN WE RECOVER?\t"),5);
-            
-          // since ProcessFormulas() is triggered by an ISR every second, we can increment this way.
-          if (++(TripFormulaDataStructptr[indexptr]->CurrentTripRecoveryDurationSeconds) >= (TripFormulaDataStructptr[indexptr]->TripRecoveryDurationSeconds))
-          {
-            // we can recover from trip, no need to recover if formula is dry run
-            if (!TripFormulaDataStructptr[indexptr]->FormulaDryRun)
-            {
-              DebugPrint(F("YES.\tTOGGLING PINS:\t"),5);
-              for(uint8_t digitalPinsListIndex = 0; digitalPinsListIndex < 8; digitalPinsListIndex++)
-              {
-                digitalWrite(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],!(TripFormulaDataStructptr[indexptr]->HighOrLowOnFormulaTrue));
-                DebugPrint(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],5);
-                DebugPrint(F(" "),5);
-                
-              }
-              DebugPrint(F("\n"),5);
-
-            }
-            else
-            {
-              DebugPrint(F("NO.\tRECOVER NOT NEEDED, DRY RUN\n"),5);
-            }
-              
-          }
-          else
-          {
-            DebugPrint(F("NO.\tRECOVERY WINDOW NOT ELASPED\n"),5);
-          }
-        
-        }
-        else
-        {
-          DebugPrint(F("ProcessFormulas: EITHER NOT TRIPPED, OR MANUAL RECOVERY\n"),5);
-        }
-            
-      }
-    }
-
-  }
-  
-}
-
-void CPL_line_test(uint8_t test_seconds)
-{
-  for(uint8_t i=0;i<test_seconds;i++)
-  {
-    Serial1.print(F("1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz\n"));
-    Serial1.flush();
-    delay(1000);
-  }
-}
-
-
 uint16_t GetLastEventAddrFromEEPROM()
 {
 
@@ -1566,6 +1380,8 @@ int8_t WriteFrameToEEPROM(uint16_t addr, uint8_t frame[16])
   return 0;
 
 }
+
+
 
 void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
 {
@@ -1674,6 +1490,413 @@ void logEventToEEPROM(uint16_t eventCode, uint16_t eventData)
   }
 
 }
+
+int16_t digitalWriteToggle(uint8_t pin, uint8_t mode, bool revert)
+{
+
+  uint16_t bm = digitalPinToBitMask(pin);
+  uint16_t *port = digitalPinToPort(pin);
+
+  if (port == NOT_A_PIN) {return 2;} // not a valid pid
+
+
+  if (mode > 0x2) {return 1;} // not a valid mode
+  else if (mode == TOGGLE)
+  {
+    // read pin state (based on set value LATCH, not LEVEL 
+    // as the level may be LOW if driving a too low impedance even if the pin is set to HIGH) and toggle it    
+    *port ^= bm; 
+  }
+  else
+  {
+    digitalWrite(pin,(mode != revert)); // write HIGH or LOW based on mode, set NOT mode if we should revert pin state. (formula state revert to nominal)
+  }
+}
+
+
+void digitalWriteToggleByIndex(uint8_t indexptr, uint8_t digitalPinsListIndex, bool revert)
+{
+  // seems impossible to get the bitfield variable dynamically based on index, unless using pointers, but that defeats the use of bitfields...  
+  switch (digitalPinsListIndex)
+  {
+    case 0:
+    digitalWriteToggle(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],TripFormulaDataStructptr[indexptr]->PinTripMode.Pin0Mode,revert);
+    break;
+
+    case 1:
+    digitalWriteToggle(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],TripFormulaDataStructptr[indexptr]->PinTripMode.Pin1Mode,revert);
+    break;
+
+    case 2:
+    digitalWriteToggle(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],TripFormulaDataStructptr[indexptr]->PinTripMode.Pin2Mode,revert);
+    break;
+    
+    case 3:
+    digitalWriteToggle(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],TripFormulaDataStructptr[indexptr]->PinTripMode.Pin3Mode,revert);
+    break;
+
+    case 4:
+    digitalWriteToggle(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],TripFormulaDataStructptr[indexptr]->PinTripMode.Pin4Mode,revert);
+    break;
+    
+    case 5:
+    digitalWriteToggle(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],TripFormulaDataStructptr[indexptr]->PinTripMode.Pin5Mode,revert);
+    break;
+
+    case 6:
+    digitalWriteToggle(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],TripFormulaDataStructptr[indexptr]->PinTripMode.Pin6Mode,revert);
+    break;
+    
+    case 7:
+    digitalWriteToggle(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],TripFormulaDataStructptr[indexptr]->PinTripMode.Pin7Mode,revert);            
+    break;            
+  }
+
+}
+
+
+void ProcessFormulas()
+{
+
+// COILS FOR TRIP FORMULAS UPDATE :
+
+// coil 1 : formula update requested by client
+// coil 2 : RESERVED
+// coil 3 : formula DRY RUN : does not effect pin status, only reports it (see pin statuses coils)
+// coil 4 : trip recovery strategy, MANUAL or AUTO on condition clear
+
+
+// HOLDING REGISTERS FOR TELEMETRY :
+
+// holding register 78 : 5V DC Bus voltage
+// holding register 79 : 12V DC Bus voltage
+// holding register 80 to 97 : most recent telemetry
+// holding register 98 to 112 : Moving average telemetry for processing by client purposes
+
+// HOLDING REGISTERS - RESERVED :
+// holding registers 113 to 145 : reserved
+
+// HOLDING REGISTERS FOR TIME SYNCHRONISATION
+// holding registers 146,147,148,149 : epoch seconds in 64 bit format (Y2K38 compliant)
+// holding register 150 : milliseconds to add to epoch seconds. valid integer values 0 to 999
+
+// HOLDING REGISTERS FOR TRIP FORMULAS UPDATE
+// holding register 151 LSB : MA Window in seconds to use for formula evaluation of variables. all variables in the same formula
+// are evaluated using the same MA Windows
+// holding register 151 MSB : Formula Slot that is being updated
+// holding register 152 to 155 : list of pins to trip. each register holds 2 list items (8 bit pin ID). max number of pins : 8
+
+// holding register 156  : pin trip type for the 8 pins packed into one register : two bits for each pin.
+// little endian (for bit, byte and word order).
+// 00 = trip to LOW
+// 01 = trip to HIGH
+// 10 = toggle
+
+// ex : pin indexes       : 7   6   5   4   3   2   1   0
+//      pin IDs           : 27  26  22  20  19  17  15  14
+
+//      pin trip register : 156 156 156 156 156 156 156 156
+//    : pin trip mode     : 00  00  01  01  10  10  00  10 
+
+// holding registers 157 to 164 : pin trip delay in ms before tripping next pin index. 1 register per delay in ms (2 bytes per delay, max delay 65535 ms)
+// little endian.
+// ex : register 158 is delay between trip of pin index 0 and pin index 1, register 159 delay between pin index 1 and 2. etc.
+
+// holding register 165 : trip recovery hysteresis time : duration in seconds condition must remain clear before
+// pin(s) reactivation if AUTO MODE.
+// holding registers 166 to 197 : formula string, 32 registers to hold 64 chars max, including \0
+  // convert register content to temporary char array
+  // compile and evaluate : if ok
+  // write it to flash, use 4K for each formula
+
+  // if no formula update : read sequentially each formula from flash, compile and evaluate.
+  // generate action on pins.
+
+  if(ModbusRTUServer.coilRead(1) == 1)
+  {
+    uint16_t FormulaDataBaseAddress = 151;
+    DebugPrint(F("ProcessFormulas: FORMULA UPDATE: indexptr:\t"),5);
+    uint16_t MAWindowAndFormulaSlot;
+    uint8_t MAWindowAndFormulaSlotArray[2];
+    uint8_t indexptr;
+    ISR_timer.disable(MovingAveragesTimerNumber);
+    MAWindowAndFormulaSlot = ModbusRTUServer.holdingRegisterRead(FormulaDataBaseAddress);
+    memcpy(&MAWindowAndFormulaSlotArray,&MAWindowAndFormulaSlot,sizeof(MAWindowAndFormulaSlot));
+    indexptr = MAWindowAndFormulaSlotArray[0];
+    
+    DebugPrint(String(indexptr),5);
+    DebugPrint(F("\n"),5);
+
+    if (indexptr < 5)
+    {
+
+      TripFormulaDataStructptr[indexptr]->MAWindowSeconds = constrain(MAWindowAndFormulaSlotArray[1],1,nbvalues);
+      //TripFormulaDataStructptr[indexptr]->HighOrLowOnFormulaTrue = ModbusRTUServer.coilRead(2);
+      
+      DebugPrint(F("ProcessFormulas: MAWindowSeconds HighOrLowOnFormulaTrue FormulaChars DryRun isTripRecoveryStrategyAuto TripRecoveryDuration PinsList:\t"),5);
+      DebugPrint(String(TripFormulaDataStructptr[indexptr]->MAWindowSeconds),5);
+      DebugPrint(F("\t"),5);
+      
+      //DebugPrint(String(TripFormulaDataStructptr[indexptr]->HighOrLowOnFormulaTrue),5);
+      //DebugPrint(F("\t"),5);
+      
+      // TODO : run pin list update first to check that there are no reserved pins.
+      // condition update of TripFormulaDataStructptr on the absence of reserved pins inside the list.
+
+      char FormulaChars[64];
+      uint16_t FormulaCharsRegisters[32];
+      for(uint8_t indexcharregister = 0; indexcharregister < 32; indexcharregister++)
+      {
+        FormulaCharsRegisters[indexcharregister] = ModbusRTUServer.holdingRegisterRead(FormulaDataBaseAddress + 15 + indexcharregister);
+      }
+
+      memcpy(&FormulaChars,&FormulaCharsRegisters,sizeof(FormulaChars));
+      
+      for(uint8_t charindex = 0; charindex < 64; charindex += 2)
+      {
+        char tmpchar;
+        tmpchar = FormulaChars[charindex];
+        FormulaChars[charindex] = FormulaChars[charindex+1];
+        FormulaChars[charindex+1] = tmpchar;
+      }
+
+      memcpy(&(TripFormulaDataStructptr[indexptr]->FormulaChars),&FormulaChars,sizeof(FormulaChars));
+      //TripFormulaDataStructptr[indexptr]->FormulaChars = FormulaChars;
+
+
+      DebugPrint(String(FormulaChars),5);
+      DebugPrint(F("\t"),5);
+    
+
+
+      TripFormulaDataStructptr[indexptr]->FormulaDryRun = ModbusRTUServer.coilRead(3);
+      TripFormulaDataStructptr[indexptr]->isTripRecoveryStrategyAuto = ModbusRTUServer.coilRead(4);
+      TripFormulaDataStructptr[indexptr]->TripRecoveryDurationSeconds = ModbusRTUServer.holdingRegisterRead(FormulaDataBaseAddress + 14);
+      
+      DebugPrint(String(TripFormulaDataStructptr[indexptr]->FormulaDryRun),5);
+      DebugPrint(F("\t"),5);
+    
+      DebugPrint(String(TripFormulaDataStructptr[indexptr]->isTripRecoveryStrategyAuto),5);
+      DebugPrint(F("\t"),5);
+
+      DebugPrint(String(TripFormulaDataStructptr[indexptr]->TripRecoveryDurationSeconds),5);
+      DebugPrint(F("\t"),5);
+    
+      uint8_t DigitalPinsList[8];
+      uint16_t DigitalPinsListRegisters[4];
+
+      for(uint8_t indexpinsregister = 0; indexpinsregister < 4; indexpinsregister++)
+      {
+        DigitalPinsListRegisters[indexpinsregister] = ModbusRTUServer.holdingRegisterRead(FormulaDataBaseAddress + 1 + indexpinsregister);
+      }
+      
+      memcpy(&DigitalPinsList,&DigitalPinsListRegisters,sizeof(DigitalPinsListRegisters));
+    
+      for(uint8_t pinindex = 0; pinindex < 8; pinindex += 2)
+      {
+        uint8_t tmppin;
+        tmppin = DigitalPinsList[pinindex];
+        DigitalPinsList[pinindex] = DigitalPinsList[pinindex+1];
+        DigitalPinsList[pinindex+1] = tmppin;
+      } // dirty fix for getting back correctly ordered pin list
+
+      // We should now check that there are no reserved pins in the pinlist.
+      static bool PinsListError = false;
+      bool PrevPinsListError = PinsListError;
+      PinsListError = false;
+
+      for(uint8_t pinindex = 0; pinindex < 8; pinindex++)
+      {
+
+        uint8_t tmppin;   
+        tmppin = DigitalPinsList[pinindex];
+        for(uint8_t ReservedPinIndex = 0; ReservedPinIndex < sizeof(ReservedPinList)/sizeof(*ReservedPinList); ReservedPinIndex++)
+        {
+          if (tmppin == ReservedPinList[ReservedPinIndex])
+          {
+            PinsListError = true;
+            break;
+          }
+        }
+        
+
+      } 
+
+
+      if(!PinsListError) // Only update DigitalPinsList if all pins are valid. In case of error, the used pin list for formula operation is NOT changed
+      // and is NOT in sync with the data of DigitalPinsList nor the corresponding ModbusRegisters, which contain invalid pins.
+      //
+      // TODO : enable configuration option that invalidates previous pin list in case of current error in pin list. 
+      // TODO : In that case, Pin state would stay frozen at the current state.
+      {
+        memcpy(&(TripFormulaDataStructptr[indexptr]->DigitalPinsList), &DigitalPinsList, sizeof(DigitalPinsList));
+        if(PrevPinsListError)
+        {
+            logEventToEEPROM(19,0); //    
+        }
+
+        uint16_t DigitalPinsListTripModeRegister;
+
+        DigitalPinsListTripModeRegister = ModbusRTUServer.holdingRegisterRead(FormulaDataBaseAddress + 5);
+        memcpy(&(TripFormulaDataStructptr[indexptr]->PinTripMode), &DigitalPinsListTripModeRegister, sizeof(DigitalPinsListTripModeRegister));
+        // TODO : Check endianness.
+
+
+        uint16_t DigitalPinsListTripDelayMillis[7];
+
+        for(uint8_t pinindex = 0; pinindex < sizeof(DigitalPinsListTripDelayMillis)/sizeof(*DigitalPinsListTripDelayMillis); pinindex++)
+        {
+          DigitalPinsListTripDelayMillis[pinindex] = ModbusRTUServer.holdingRegisterRead(FormulaDataBaseAddress + 6 + pinindex);
+        }
+
+        memcpy(&(TripFormulaDataStructptr[indexptr]->PinTripDelayMillis), &DigitalPinsListTripDelayMillis, sizeof(DigitalPinsListTripDelayMillis));
+        
+
+      }
+      else if(!PrevPinsListError) // There is a pin list error and previously there was none. Log Error to EEPROM. (prevents spamming)
+      {
+        logEventToEEPROM(18,0);
+      }
+      
+      
+      for(uint8_t indexpins = 0; indexpins < 8; indexpins++)
+      {
+
+        DebugPrint(String(TripFormulaDataStructptr[indexptr]->DigitalPinsList[indexpins]),5);
+        DebugPrint(F(" "),5);
+    
+      }
+
+      DebugPrint(F("\n"),5);
+    
+    }
+    else
+    {
+      // not a valid formula slot
+      DebugPrint(F("ProcessFormulas: NOT A VALID FORMULA SLOT\n"),5);
+    
+    }
+
+    ModbusRTUServer.coilWrite(1,0);
+    ISR_timer.enable(MovingAveragesTimerNumber);
+    
+  }
+    
+  DebugPrint(F("ProcessFormulas: WILL PARSE FORMULAS\n\n"),5);
+    
+  // parse_formulas
+  for(uint8_t indexptr = 0; indexptr<5; indexptr++)
+  {
+    // check if formula slot is used
+    DebugPrint(F("ProcessFormulas: FORMULA indexptr:\t"),5);
+    DebugPrint(indexptr,5);
+    DebugPrint(F("\n"),5);    
+    
+    if(TripFormulaDataStructptr[indexptr]->MAWindowSeconds != 0)
+    {
+      float result;
+      bool bool_result;
+      DebugPrint(F("ProcessFormulas: THIS FORMULA SLOT IS USED\n"),5);
+      
+      EvalLogicalExpression(TripFormulaDataStructptr[indexptr]->MAWindowSeconds,TripFormulaDataStructptr[indexptr]->FormulaChars,result);
+      bool_result = bool(result);
+
+      if ((bool_result) && !(TripFormulaDataStructptr[indexptr]->FormulaDryRun) && !(TripFormulaDataStructptr[indexptr]->IsTripped))
+      {
+        // this is not a drill. process pins
+        DebugPrint(F("ProcessFormulas: NOT A DRILL, PROCESS PINS:\t"),5);
+        TripFormulaDataStructptr[indexptr]->IsTripped = true;
+        // reset current trip recovery duration
+        TripFormulaDataStructptr[indexptr]->CurrentTripRecoveryDurationSeconds = 0;
+          
+        for(uint8_t digitalPinsListIndex = 0; digitalPinsListIndex < 8; digitalPinsListIndex++)
+        {
+
+          digitalWriteToggleByIndex(indexptr,digitalPinsListIndex,false);
+
+          if (digitalPinsListIndex < 7)
+          {
+            delay(TripFormulaDataStructptr[indexptr]->PinTripDelayMillis[digitalPinsListIndex]);
+          }
+
+          //digitalWrite(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],TripFormulaDataStructptr[indexptr]->HighOrLowOnFormulaTrue);
+          DebugPrint(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],5);
+          DebugPrint(F(" "),5);
+          DebugPrint(F("\n"),5);
+        }
+        
+        DebugPrint(F("\n"),5);
+       
+      }
+      else if (!bool_result)
+      {
+        // check if pin has either recovered from trip or was not tripped previously and if we can recover Automatically
+        if ((TripFormulaDataStructptr[indexptr]->IsTripped) && (TripFormulaDataStructptr[indexptr]->isTripRecoveryStrategyAuto))
+        {
+
+          DebugPrint(F("ProcessFormulas: CAN WE RECOVER?\t"),5);
+            
+          // since ProcessFormulas() is triggered by an ISR every second, we can increment this way.
+          if (++(TripFormulaDataStructptr[indexptr]->CurrentTripRecoveryDurationSeconds) >= (TripFormulaDataStructptr[indexptr]->TripRecoveryDurationSeconds))
+          {
+            // we can recover from trip, no need to recover if formula is dry run
+            if (!TripFormulaDataStructptr[indexptr]->FormulaDryRun)
+            {
+              DebugPrint(F("YES.\tTOGGLING PINS:\t"),5);
+              for(uint8_t digitalPinsListIndex = 0; digitalPinsListIndex < 8; digitalPinsListIndex++)
+              {
+
+                digitalWriteToggleByIndex(indexptr,digitalPinsListIndex,true);
+                // TODO : optional reverse order pin processing recovery mode
+
+                if (digitalPinsListIndex < 7)
+                {
+                  delay(TripFormulaDataStructptr[indexptr]->PinTripDelayMillis[digitalPinsListIndex]);
+                }
+
+                          
+                //digitalWrite(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],!(TripFormulaDataStructptr[indexptr]->HighOrLowOnFormulaTrue));
+                DebugPrint(TripFormulaDataStructptr[indexptr]->DigitalPinsList[digitalPinsListIndex],5);
+                DebugPrint(F(" "),5);
+                
+              }
+              DebugPrint(F("\n"),5);
+
+            }
+            else
+            {
+              DebugPrint(F("NO.\tRECOVER NOT NEEDED, DRY RUN\n"),5);
+            }
+              
+          }
+          else
+          {
+            DebugPrint(F("NO.\tRECOVERY WINDOW NOT ELASPED\n"),5);
+          }
+        
+        }
+        else
+        {
+          DebugPrint(F("ProcessFormulas: EITHER NOT TRIPPED, OR MANUAL RECOVERY\n"),5);
+        }
+            
+      }
+    }
+
+  }
+  
+}
+
+void CPL_line_test(uint8_t test_seconds)
+{
+  for(uint8_t i=0;i<test_seconds;i++)
+  {
+    Serial1.print(F("1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz\n"));
+    Serial1.flush();
+    delay(1000);
+  }
+}
+
 
 uint16_t clearEEPROM(bool HardErase)
 {
