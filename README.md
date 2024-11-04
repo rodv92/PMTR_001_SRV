@@ -31,7 +31,7 @@ For more information on the client, check https://www.github.com/rodv92/PMTR_001
 ----
 Current State of the project.
 
-A single phase proof of concept with a raspberry pi client and a single phase power meter was done and shows good results. The server code integrate formula based actions, and time synchronization. A basic web chart of power parameters and logging into a MariaDB database is part of this POC.
+A single phase proof of concept with a raspberry pi client and a single phase power meter was done and shows good results. The server code integrates formula based actions, and time synchronization. A basic web chart of power parameters and logging into a MariaDB database is part of this POC.
 
 What needs to be done in priority as of October 2024:
 
@@ -40,9 +40,12 @@ Hardware :
 - Finish the 3 phase prototype server, currently designed with Easy-EDA pro. DONE!
     - Add ADG333 switching of serial line to query each PZEM-004t V3 modules. DONE!
 - Add code for DS3231 time keeping. DONE!
-- Add supercapacitor bank to handle short time power loss events (max 60s with all subcomponents on, with a 5F * 6 supercapacitor bank). DONE!
+- Fix DS3231 powering issues. Either confirm 5V tolerance and power the module from the 5V bus, or use logic shifters when powering from the 3.3V Arduino bus. If powered from the 3.3V bus, the 5V logic signals back-feed on the 3.3V bus, raising its voltage, which is undesirable.
+- Add supercapacitor bank to handle short time power loss events (max 60s with all subcomponents on, with a 5F * 6 supercapacitor bank). DONE ! Note : A 10F * 6 bank would be preferable to ensure that the system is queried through modbus at least once in case of 3 phase power loss @ 1 query/minute.
 - Add DC bus (5V/12V) voltage monitoring. DONE!
-- Add 12V/24V contactor driving capability through multi channel MOSFET switch driver board, this board would be integrated to the prototype.
+- Add 12V/24V contactor driving capability through multi channel MOSFET switch driver board, this board would be integrated to the prototype + 24V step-up converter for 24V contactors.
+- Add power-on / reset MOSFET control path to turn on/off peripherals. (such as the power hungry ES1642 for specific cases, such as loss of all power an all phases and when longer hold time on the supercapacitor bank is required)
+- Test ES1642 RST pin, and its influence on ES1642 power consumption, as well as a watchdog to reset the ES1642 periodically when there is no modbus querying activity detected, which could indicate ES1642 malfunction.
 - Add interlock (local/remote) key switch
 - Add LCD screen / keypad.
 - Keep in touch with PeaceFair, the maker of the PZEM-004t V3.0 to make a hardened 400V module (there are still some issues regarding with high voltage tolerance)
@@ -51,12 +54,21 @@ Hardware :
 Protection formula :
 - Harden and test formula actions where conflicting pins are used with different formulas (that could be triggered at the same time). This would require testing code and simulation environment.
 - Add formula slot process ordering and resultant pin processing (so that only the resultant pin state is processed)
-- Prevent use of reserved pins. DONE, not tested!
-- Add interlock (local/remote) code.
+- Prevent use of reserved pins. DONE, not tested !
 - Add pin toggle timing delays. DONE, not tested !
 
-General debugging :
+
+General debugging and logic testing features :
+
+- Add interlock protection (local/remote control) code, to prevent conflicts while testing on the local shell.
+- Expand shell commands to input formulas, manual pin operation, etc.
 - Add EEPROM event logging. DONE!
+
+Telemetry :
+- Add retry logic to compensate PZEM-004t v3.0 serial line errors, which give rise to sporadic Nan/Inf data. DONE !
+- Add power loss detection in case of persistent/consecutive Nan/Inf voltage data.
+- Add failure rate statistics. DONE !
+- Fix bug in processing delay compensation, to ensure isochronous telemetry sampling. As for now, delay compensation has a strange side effect of inducing PZEM serial communication errors.
 
 Modbus client :
 - Make the raspberry pi (Modbus Client) (wifi, serial) configuration seamless
@@ -133,9 +145,20 @@ Power, Energy, power factor resolution are doubled due to the fact that their co
 
 Otherwise, the floors, ceilings of the remaining parameters conforms to the PZEM-004T v3.0 datasheet of this day.
 It is expected that frequency measurement is not affected by the PZEM-004t v3.0 HV modification.
-For power factor, leading or lagging info is not provided.
 
-PMTR_001_SRV performs instantaneous measurement as fast as the 9600 bps serial interface allows, which is a little less than 100 per second (all parameters read)
+----
+PZEM-004t v3.0 Limitations :
+
+- For power factor, leading or lagging info is not provided.
+- No Power flow direction information.
+- Does not measure voltage under 60~65 VAC, as the PZEM-004t v3.0 is powered by the AC line through a zener+regulator. Powering mods are available to circumvent that, but care is needed for proper isolation,
+which means a separate DC bus (with isolated transformers, dedicated battery bus, that are separate from MCU and other peripheral DC buses)
+
+The modifications are described here :
+
+https://github.com/TheHWcave/Peacefair-PZEM-004T-
+
+- PMTR_001_SRV performs instantaneous measurement as fast as the 9600 bps serial interface allows, which is a little less than 100 per second (all parameters read)
 When performing 3 phase metering the PMTR_001_SRV performs serial port switching (using an ADG333A Quad SPDT switch) So it shares a single serial port on the Arduino for 3 PZEM-004T modules.
 this lowers the read rate to less than 33 per second.
 
@@ -212,8 +235,8 @@ device to the Raspberry Pi client.
 
 Thus, it seems more adequate to use the same Modbus address on each module, and switch them using an IC switch like the ADG333.
 
-ES-1642NC uses a separate hardware serial port for modbus communication over one phase.
-the serial line speed is 9600 bps. the PLC speed is between 2.5 to 4.5 kbps.
+ES-1642NC uses a separate hardware serial port on the Arduino for modbus communication over one phase.
+the serial line speed is 9600 bps. the PLC line speed modulation is between 2.5 to 4.5 kbauds, as per datasheet.
 
 
 A real time clock (RTC) 3231 mini module is used to keep track of time and the synchronization is done over PLC / Modbus.
