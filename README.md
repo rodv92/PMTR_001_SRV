@@ -42,16 +42,18 @@ Hardware :
 - Add code for DS3231 time keeping. DONE!
 - Add supercapacitor bank to handle short time power loss events (max 60s with all subcomponents on, with a 5F * 6 supercapacitor bank). DONE!
 - Add DC bus (5V/12V) voltage monitoring. DONE!
+- Add 12V/24V contactor driving capability through multi channel MOSFET switch driver board, this board would be integrated to the prototype.
 - Add interlock (local/remote) key switch
 - Add LCD screen / keypad.
 - Keep in touch with PeaceFair, the maker of the PZEM-004t V3.0 to make a hardened 400V module (there are still some issues regarding with high voltage tolerance)
 
 
 Protection formula :
-- Harden and test formula actions where conflicting pins are used with different actions.
-- Prevent use of reserved pins. DONE!
+- Harden and test formula actions where conflicting pins are used with different formulas (that could be triggered at the same time). This would require testing code and simulation environment.
+- Add formula slot process ordering and resultant pin processing (so that only the resultant pin state is processed)
+- Prevent use of reserved pins. DONE, not tested!
 - Add interlock (local/remote) code.
-- Add pin toggle timing delays.
+- Add pin toggle timing delays. DONE, not tested !
 
 General debugging :
 - Add EEPROM event logging. DONE!
